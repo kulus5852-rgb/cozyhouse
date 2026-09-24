@@ -1,0 +1,110 @@
+{
+  "url": "file:///D:/cozyses/build/house.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "living_overview",
+      "file": "shots/house/living_overview.png",
+      "info": {
+        "drawCalls": 60,
+        "triangles": 45356,
+        "fps": 144
+      }
+    },
+    {
+      "name": "hall_stairs",
+      "file": "shots/house/hall_stairs.png",
+      "info": {
+        "drawCalls": 66,
+        "triangles": 46104,
+        "fps": 134
+      }
+    },
+    {
+      "name": "loft_overview_east",
+      "file": "shots/house/loft_overview_east.png",
+      "info": {
+        "drawCalls": 83,
+        "triangles": 48136,
+        "fps": 144
+      }
+    },
+    {
+      "name": "window_hero",
+      "file": "shots/house/window_hero.png",
+      "info": {
+        "drawCalls": 78,
+        "triangles": 46676,
+        "fps": 144
+      }
+    },
+    {
+      "name": "aerial",
+      "file": "shots/house/aerial.png",
+      "info": {
+        "drawCalls": 99,
+        "triangles": 48400,
+        "fps": 144
+      }
+    },
+    {
+      "name": "porch",
+      "file": "shots/house/porch.png",
+      "info": {
+        "drawCalls": 55,
+        "triangles": 45456,
+        "fps": 144
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 1793,
+  "info": {
+    "fps": 144,
+    "drawCalls": 55,
+    "triangles": 45456,
+    "geometries": 64,
+    "textures": 73,
+    "programs": 8,
+    "lights": 1,
+    "meshes": 64,
+    "colliders": 32,
+    "interactables": 3,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 354,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 641.2,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1.7,
+        "error": false
+      },
+      {
+        "name": "house_testlight",
+        "order": 29,
+        "initMs": 22.8,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 5.9,
+      "y": 1.2,
+      "z": 6,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

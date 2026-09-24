@@ -1,0 +1,98 @@
+{
+  "url": "file:///D:/cozyses/build/hallstudy_base.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "hall_door",
+      "file": "shots/hallstudy/base/hall_door.png",
+      "info": {
+        "drawCalls": 45,
+        "triangles": 64248,
+        "fps": 67.2
+      }
+    },
+    {
+      "name": "hall_from_door",
+      "file": "shots/hallstudy/base/hall_from_door.png",
+      "info": {
+        "drawCalls": 53,
+        "triangles": 64780,
+        "fps": 67.2
+      }
+    },
+    {
+      "name": "study",
+      "file": "shots/hallstudy/base/study.png",
+      "info": {
+        "drawCalls": 42,
+        "triangles": 63960,
+        "fps": 144
+      }
+    },
+    {
+      "name": "study_back",
+      "file": "shots/hallstudy/base/study_back.png",
+      "info": {
+        "drawCalls": 65,
+        "triangles": 66056,
+        "fps": 144
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 2240,
+  "info": {
+    "fps": 144,
+    "drawCalls": 65,
+    "triangles": 66056,
+    "geometries": 67,
+    "textures": 71,
+    "programs": 12,
+    "lights": 4,
+    "meshes": 69,
+    "colliders": 32,
+    "interactables": 3,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 403.8,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": null,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 781.7,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1.2,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 16.7,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 6.2,
+      "y": 1.6,
+      "z": -4.3,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

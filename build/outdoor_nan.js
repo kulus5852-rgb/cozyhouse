@@ -1,0 +1,1 @@
+const out = []; COZY.scene.traverse(o => { if (o.geometry && o.geometry.attributes.position) { const a = o.geometry.attributes.position.array; let bad = 0; for (let i = 0; i < a.length; i++) if (!isFinite(a[i])) { bad++; } if (bad) out.push(o.name + ':' + bad + '/' + a.length + ' parent=' + (o.parent && o.parent.name)); } }); return out;

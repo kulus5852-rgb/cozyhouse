@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Rainy Day Cottage — a cozy house simulator</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0f14; color: #f3ead8;
+    font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif; -webkit-user-select: none; user-select: none; }
+  canvas { display: block; }
+  #boot-loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, #2a2320 0%, #0d0f14 70%); z-index: 1000; transition: opacity 0.8s ease; }
+  #boot-loading .title { font-size: 34px; letter-spacing: 2px; color: #f7e3c4; text-shadow: 0 0 24px rgba(255,170,90,0.35); }
+  #boot-loading .msg { margin-top: 14px; font-size: 15px; color: #cdbfa8; font-style: italic; }
+  #boot-loading.hidden { opacity: 0; pointer-events: none; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="boot-loading"><div class="title">Rainy Day Cottage</div><div class="msg">putting the kettle on…</div></div>
+<script>
+  // If the 3D engine could not be fetched (offline / CDN blocked) tell the user instead of hanging forever.
+  setTimeout(function () {
+    if (!window.COZY || !window.COZY.ready) {
+      var el = document.getElementById('boot-loading');
+      if (el && !el.classList.contains('hidden')) {
+        var m = el.querySelector('.msg');
+        if (m && !window.COZY) m.textContent = 'Still loading… this page needs an internet connection the first time (it loads three.js from cdn.jsdelivr.net).';
+      }
+    }
+  }, 12000);
+</script>
+<!-- MODULES -->
+</body>
+</html>

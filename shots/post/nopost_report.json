@@ -1,0 +1,113 @@
+{
+  "url": "file:///D:/cozyses/build/post.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "living_overview",
+      "file": "shots/post/nopost_living_overview.png",
+      "info": {
+        "drawCalls": 67,
+        "triangles": 73694,
+        "fps": 18.4
+      }
+    },
+    {
+      "name": "living_fireplace",
+      "file": "shots/post/nopost_living_fireplace.png",
+      "info": {
+        "drawCalls": 45,
+        "triangles": 66450,
+        "fps": 144.8
+      }
+    },
+    {
+      "name": "living_back",
+      "file": "shots/post/nopost_living_back.png",
+      "info": {
+        "drawCalls": 84,
+        "triangles": 73392,
+        "fps": 93.1
+      }
+    },
+    {
+      "name": "dining",
+      "file": "shots/post/nopost_dining.png",
+      "info": {
+        "drawCalls": 43,
+        "triangles": 66446,
+        "fps": 145.1
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 2182,
+  "evalResults": [
+    null
+  ],
+  "info": {
+    "fps": 145.1,
+    "drawCalls": 43,
+    "triangles": 66446,
+    "geometries": 89,
+    "textures": 86,
+    "programs": 41,
+    "lights": 7,
+    "meshes": 92,
+    "colliders": 32,
+    "interactables": 6,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 365.3,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": null,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 676.3,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1.1,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 13.7,
+        "error": false
+      },
+      {
+        "name": "post",
+        "order": 90,
+        "initMs": 6.7,
+        "error": false
+      },
+      {
+        "name": "post_lamps",
+        "order": 61,
+        "initMs": 25.8,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": -3.4,
+      "y": 1.6,
+      "z": 0.9,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

@@ -1,0 +1,107 @@
+{
+  "url": "file:///D:/cozyses/build/loft_base.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "loft_landing",
+      "file": "shots/loft/base_loft_landing.png",
+      "info": {
+        "drawCalls": 53,
+        "triangles": 64086,
+        "fps": 138.2
+      }
+    },
+    {
+      "name": "loft_bed",
+      "file": "shots/loft/base_loft_bed.png",
+      "info": {
+        "drawCalls": 38,
+        "triangles": 63008,
+        "fps": 138.2
+      }
+    },
+    {
+      "name": "loft_skylight",
+      "file": "shots/loft/base_loft_skylight.png",
+      "info": {
+        "drawCalls": 34,
+        "triangles": 63054,
+        "fps": 143.7
+      }
+    },
+    {
+      "name": "loft_nook",
+      "file": "shots/loft/base_loft_nook.png",
+      "info": {
+        "drawCalls": 42,
+        "triangles": 63482,
+        "fps": 143.7
+      }
+    },
+    {
+      "name": "loft_overview_east",
+      "file": "shots/loft/base_loft_overview_east.png",
+      "info": {
+        "drawCalls": 59,
+        "triangles": 65888,
+        "fps": 144.2
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 1828,
+  "info": {
+    "fps": 144.2,
+    "drawCalls": 59,
+    "triangles": 65888,
+    "geometries": 68,
+    "textures": 71,
+    "programs": 12,
+    "lights": 4,
+    "meshes": 69,
+    "colliders": 32,
+    "interactables": 3,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 349.5,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": 0.7,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 643.8,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 0.7,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 12.6,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": -4,
+      "y": 4.9,
+      "z": -0.5,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

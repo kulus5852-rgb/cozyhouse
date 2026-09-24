@@ -1,0 +1,104 @@
+{
+  "url": "file:///D:/cozyses/build/outdoor.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "spawn",
+      "file": "shots/outdoor/spawn.png",
+      "info": {
+        "drawCalls": 89,
+        "triangles": 464804,
+        "fps": 144
+      }
+    },
+    {
+      "name": "oak",
+      "file": "shots/outdoor/oak.png",
+      "info": {
+        "drawCalls": 42,
+        "triangles": 414714,
+        "fps": 142.1
+      }
+    },
+    {
+      "name": "maple",
+      "file": "shots/outdoor/maple.png",
+      "info": {
+        "drawCalls": 34,
+        "triangles": 406717,
+        "fps": 144
+      }
+    },
+    {
+      "name": "pines",
+      "file": "shots/outdoor/pines.png",
+      "info": {
+        "drawCalls": 44,
+        "triangles": 423563,
+        "fps": 144
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 3001,
+  "info": {
+    "fps": 144,
+    "drawCalls": 44,
+    "triangles": 423563,
+    "geometries": 87,
+    "textures": 76,
+    "programs": 32,
+    "lights": 6,
+    "meshes": 153,
+    "colliders": 87,
+    "interactables": 7,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 442.3,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": null,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 726,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1.1,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 15.2,
+        "error": false
+      },
+      {
+        "name": "outdoor",
+        "order": 40,
+        "initMs": 467.6,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 0,
+      "y": 1.6,
+      "z": -9,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

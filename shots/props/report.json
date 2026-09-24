@@ -1,0 +1,113 @@
+{
+  "url": "file:///D:/cozyses/build/props.html?debug=1&autostart=1&lightning=0&seed=7&time=night&li=0.35&fi=0.3",
+  "views": [
+    {
+      "name": "spawn",
+      "file": "shots/props/spawn.png",
+      "info": {
+        "drawCalls": 89,
+        "triangles": 44496,
+        "fps": 144
+      }
+    },
+    {
+      "name": "lamps",
+      "file": "shots/props/lamps.png",
+      "info": {
+        "drawCalls": 72,
+        "triangles": 29606,
+        "fps": 144
+      }
+    },
+    {
+      "name": "floorlamp",
+      "file": "shots/props/floorlamp.png",
+      "info": {
+        "drawCalls": 16,
+        "triangles": 7046,
+        "fps": 144
+      }
+    },
+    {
+      "name": "tablelamps",
+      "file": "shots/props/tablelamps.png",
+      "info": {
+        "drawCalls": 18,
+        "triangles": 6912,
+        "fps": 144
+      }
+    },
+    {
+      "name": "wall",
+      "file": "shots/props/wall.png",
+      "info": {
+        "drawCalls": 22,
+        "triangles": 6936,
+        "fps": 144
+      }
+    },
+    {
+      "name": "pend",
+      "file": "shots/props/pend.png",
+      "info": {
+        "drawCalls": 59,
+        "triangles": 22030,
+        "fps": 144
+      }
+    },
+    {
+      "name": "ceil",
+      "file": "shots/props/ceil.png",
+      "info": {
+        "drawCalls": 18,
+        "triangles": 8142,
+        "fps": 144
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 2377,
+  "info": {
+    "fps": 144,
+    "drawCalls": 18,
+    "triangles": 8142,
+    "geometries": 77,
+    "textures": 57,
+    "programs": 19,
+    "lights": 11,
+    "meshes": 140,
+    "colliders": 0,
+    "interactables": 12,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 359,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": 0.2,
+        "error": false
+      },
+      {
+        "name": "props_test",
+        "order": 99,
+        "initMs": 942.5,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": -13.2,
+      "y": 1.6,
+      "z": 0.6,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

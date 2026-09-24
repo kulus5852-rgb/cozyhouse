@@ -1,0 +1,47 @@
+{
+  "url": "file:///D:/cozyses/build/core.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "spawn",
+      "file": "shots/_check/spawn.png",
+      "info": {
+        "drawCalls": 0,
+        "triangles": 0,
+        "fps": 144
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 589,
+  "info": {
+    "fps": 144,
+    "drawCalls": 0,
+    "triangles": 0,
+    "geometries": 0,
+    "textures": 0,
+    "programs": 0,
+    "lights": 0,
+    "meshes": 0,
+    "colliders": 0,
+    "interactables": 0,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 330.5,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 0.4,
+      "y": 1.62,
+      "z": 2,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

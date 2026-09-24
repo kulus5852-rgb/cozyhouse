@@ -1,0 +1,107 @@
+{
+  "url": "file:///D:/cozyses/build/living_base.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "spawn",
+      "file": "shots/living/base/spawn.png",
+      "info": {
+        "drawCalls": 38,
+        "triangles": 63030,
+        "fps": 144
+      }
+    },
+    {
+      "name": "living_overview",
+      "file": "shots/living/base/living_overview.png",
+      "info": {
+        "drawCalls": 39,
+        "triangles": 63114,
+        "fps": 144
+      }
+    },
+    {
+      "name": "living_fireplace",
+      "file": "shots/living/base/living_fireplace.png",
+      "info": {
+        "drawCalls": 36,
+        "triangles": 62966,
+        "fps": 144
+      }
+    },
+    {
+      "name": "living_window",
+      "file": "shots/living/base/living_window.png",
+      "info": {
+        "drawCalls": 36,
+        "triangles": 63056,
+        "fps": 144
+      }
+    },
+    {
+      "name": "living_back",
+      "file": "shots/living/base/living_back.png",
+      "info": {
+        "drawCalls": 61,
+        "triangles": 65938,
+        "fps": 140
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 1701,
+  "info": {
+    "fps": 140,
+    "drawCalls": 61,
+    "triangles": 65938,
+    "geometries": 65,
+    "textures": 68,
+    "programs": 12,
+    "lights": 4,
+    "meshes": 69,
+    "colliders": 32,
+    "interactables": 3,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 340.3,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": null,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 632.1,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1.1,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 10.4,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": -5.5,
+      "y": 1.6,
+      "z": 4.1,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

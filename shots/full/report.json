@@ -1,0 +1,104 @@
+{
+  "url": "file:///D:/cozyses/build/full.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "front_yard",
+      "file": "shots/full/front_yard.png",
+      "info": {
+        "drawCalls": 158,
+        "triangles": 531792,
+        "fps": 130.2
+      }
+    },
+    {
+      "name": "spawn",
+      "file": "shots/full/spawn.png",
+      "info": {
+        "drawCalls": 107,
+        "triangles": 522661,
+        "fps": 144
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 3633,
+  "info": {
+    "fps": 144,
+    "drawCalls": 107,
+    "triangles": 522661,
+    "geometries": 149,
+    "textures": 117,
+    "programs": 44,
+    "lights": 6,
+    "meshes": 157,
+    "colliders": 87,
+    "interactables": 8,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 350.7,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": null,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 627.9,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 11.6,
+        "error": false
+      },
+      {
+        "name": "outdoor",
+        "order": 40,
+        "initMs": 340.6,
+        "error": false
+      },
+      {
+        "name": "audio",
+        "order": 50,
+        "initMs": 0.3,
+        "error": false
+      },
+      {
+        "name": "cat",
+        "order": 70,
+        "initMs": 470.5,
+        "error": false
+      },
+      {
+        "name": "post",
+        "order": 90,
+        "initMs": 3.9,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 0.4,
+      "y": 1.62,
+      "z": 2,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

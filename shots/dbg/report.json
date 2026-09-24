@@ -1,0 +1,98 @@
+{
+  "url": "file:///D:/cozyses/build/nopost.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "spawn",
+      "file": "shots/dbg/spawn.png",
+      "info": {
+        "drawCalls": 92,
+        "triangles": 522646,
+        "fps": 144
+      }
+    },
+    {
+      "name": "np",
+      "file": "shots/dbg/np.png",
+      "info": {
+        "drawCalls": 143,
+        "triangles": 531777,
+        "fps": 124.3
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 4076,
+  "info": {
+    "fps": 124.3,
+    "drawCalls": 143,
+    "triangles": 531777,
+    "geometries": 148,
+    "textures": 104,
+    "programs": 34,
+    "lights": 6,
+    "meshes": 157,
+    "colliders": 87,
+    "interactables": 8,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 362.5,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": 0.1,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 694.4,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 0.8,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 16.4,
+        "error": false
+      },
+      {
+        "name": "outdoor",
+        "order": 40,
+        "initMs": 407.6,
+        "error": false
+      },
+      {
+        "name": "audio",
+        "order": 50,
+        "initMs": 0.6,
+        "error": false
+      },
+      {
+        "name": "cat",
+        "order": 70,
+        "initMs": 597.3,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 3.75,
+      "y": 1.3,
+      "z": 15,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

@@ -1,0 +1,163 @@
+{
+  "url": "file:///D:/cozyses/build/audio.html?debug=1&autostart=1&lightning=0&seed=7&mute=1",
+  "views": [],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 1544,
+  "evalResults": [
+    {
+      "click": {
+        "rms": -45,
+        "win": -35.6,
+        "peak": 0.29
+      },
+      "switch": {
+        "rms": -42.3,
+        "win": -34.3,
+        "peak": 0.278
+      },
+      "creak": {
+        "rms": -27.2,
+        "win": -23,
+        "peak": 0.293
+      },
+      "door_open": {
+        "rms": -26.7,
+        "win": -22.6,
+        "peak": 0.298
+      },
+      "door_close": {
+        "rms": -32,
+        "win": -24.1,
+        "peak": 0.281
+      },
+      "thud": {
+        "rms": -29.1,
+        "win": -21.3,
+        "peak": 0.272
+      },
+      "page": {
+        "rms": -32.9,
+        "win": -25.7,
+        "peak": 0.218
+      },
+      "pour": {
+        "rms": -28.7,
+        "win": -24.7,
+        "peak": 0.234
+      },
+      "sip": {
+        "rms": -37.9,
+        "win": -32.4,
+        "peak": 0.148
+      },
+      "meow": {
+        "rms": -27.1,
+        "win": -22.6,
+        "peak": 0.15
+      },
+      "chime": {
+        "rms": -28,
+        "win": -23.8,
+        "peak": 0.213
+      },
+      "match": {
+        "rms": -32.5,
+        "win": -24.5,
+        "peak": 0.272
+      },
+      "whoosh": {
+        "rms": -30.9,
+        "win": -25,
+        "peak": 0.208
+      },
+      "drawer": {
+        "rms": -28.6,
+        "win": -24,
+        "peak": 0.228
+      },
+      "curtain": {
+        "rms": -30.7,
+        "win": -26.7,
+        "peak": 0.226
+      },
+      "splash": {
+        "rms": -31.9,
+        "win": -25.6,
+        "peak": 0.335
+      },
+      "clink": {
+        "rms": -36.5,
+        "win": -28.7,
+        "peak": 0.173
+      },
+      "gate": {
+        "rms": -29.5,
+        "win": -22.5,
+        "peak": 0.282
+      },
+      "door_open_pos3m": {
+        "rms": -33.7,
+        "win": -29.4,
+        "peak": 0.098
+      },
+      "door_open_pos8m_throughWall": {
+        "rms": -47.5,
+        "win": -43.3,
+        "peak": 0.021
+      },
+      "lamp_event": {
+        "rms": -48.3,
+        "win": -40.7,
+        "peak": 0.121
+      },
+      "sit_sofa": {
+        "rms": -34.8,
+        "win": -26.7,
+        "peak": 0.153
+      }
+    }
+  ],
+  "info": {
+    "fps": 144,
+    "drawCalls": 0,
+    "triangles": 0,
+    "geometries": 0,
+    "textures": 0,
+    "programs": 0,
+    "lights": 0,
+    "meshes": 0,
+    "colliders": 0,
+    "interactables": 0,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 579,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": null,
+        "error": false
+      },
+      {
+        "name": "audio",
+        "order": 50,
+        "initMs": 0.7,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 0.4,
+      "y": 1.62,
+      "z": 2,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

@@ -1,0 +1,89 @@
+{
+  "url": "file:///D:/cozyses/build/weather.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "living_window",
+      "file": "shots/weather/living_window.png",
+      "info": {
+        "drawCalls": 23,
+        "triangles": 24744,
+        "fps": 142.3
+      }
+    },
+    {
+      "name": "glass_close",
+      "file": "shots/weather/glass_close.png",
+      "info": {
+        "drawCalls": 20,
+        "triangles": 24708,
+        "fps": 143.6
+      }
+    },
+    {
+      "name": "glass_out_close",
+      "file": "shots/weather/glass_out_close.png",
+      "info": {
+        "drawCalls": 22,
+        "triangles": 24732,
+        "fps": 144.1
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 1426,
+  "info": {
+    "fps": 144.1,
+    "drawCalls": 22,
+    "triangles": 24732,
+    "geometries": 26,
+    "textures": 32,
+    "programs": 9,
+    "lights": 4,
+    "meshes": 30,
+    "colliders": 0,
+    "interactables": 0,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 340.9,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": 0.1,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1.3,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 13,
+        "error": false
+      },
+      {
+        "name": "wtest",
+        "order": 19,
+        "initMs": 312.6,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": -3.6,
+      "y": 1.5,
+      "z": 6.2,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

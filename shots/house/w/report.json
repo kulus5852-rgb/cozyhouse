@@ -1,0 +1,128 @@
+{
+  "url": "file:///D:/cozyses/build/house_w.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "window_hero",
+      "file": "shots/house/w/window_hero.png",
+      "info": {
+        "drawCalls": 88,
+        "triangles": 71181,
+        "fps": 144
+      }
+    },
+    {
+      "name": "aerial",
+      "file": "shots/house/w/aerial.png",
+      "info": {
+        "drawCalls": 104,
+        "triangles": 72857,
+        "fps": 138
+      }
+    },
+    {
+      "name": "porch",
+      "file": "shots/house/w/porch.png",
+      "info": {
+        "drawCalls": 74,
+        "triangles": 70017,
+        "fps": 144
+      }
+    },
+    {
+      "name": "front_yard",
+      "file": "shots/house/w/front_yard.png",
+      "info": {
+        "drawCalls": 104,
+        "triangles": 72857,
+        "fps": 144
+      }
+    },
+    {
+      "name": "side_west",
+      "file": "shots/house/w/side_west.png",
+      "info": {
+        "drawCalls": 103,
+        "triangles": 72745,
+        "fps": 144
+      }
+    },
+    {
+      "name": "back_yard",
+      "file": "shots/house/w/back_yard.png",
+      "info": {
+        "drawCalls": 104,
+        "triangles": 72857,
+        "fps": 144
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 2245,
+  "info": {
+    "fps": 144,
+    "drawCalls": 104,
+    "triangles": 72857,
+    "geometries": 70,
+    "textures": 88,
+    "programs": 23,
+    "lights": 4,
+    "meshes": 70,
+    "colliders": 32,
+    "interactables": 3,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 374.3,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": 0.1,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 630.3,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 0.6,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 13,
+        "error": false
+      },
+      {
+        "name": "post",
+        "order": 90,
+        "initMs": 4.3,
+        "error": false
+      },
+      {
+        "name": "house_testlight",
+        "order": 29,
+        "initMs": 19.9,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 3,
+      "y": 1.2,
+      "z": -10.5,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

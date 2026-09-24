@@ -1,0 +1,71 @@
+{
+  "url": "file:///D:/cozyses/build/player.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 767,
+  "evalResults": [
+    [
+      [
+        "sit",
+        [
+          -1.55,
+          1.14,
+          2.76
+        ]
+      ],
+      "walk",
+      [
+        -1.2,
+        1.61,
+        2.2
+      ],
+      [
+        "flashlight:58.6"
+      ]
+    ]
+  ],
+  "perfFps": 144.3,
+  "info": {
+    "fps": 144,
+    "drawCalls": 5,
+    "triangles": 60,
+    "geometries": 5,
+    "textures": 0,
+    "programs": 1,
+    "lights": 1,
+    "meshes": 16,
+    "colliders": 26,
+    "interactables": 4,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 354.5,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1.8,
+        "error": false
+      },
+      {
+        "name": "player_testworld",
+        "order": 19,
+        "initMs": 2.9,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": -1.2,
+      "y": 0,
+      "z": 2.2,
+      "mode": "walk"
+    }
+  },
+  "moduleErrors": []
+}

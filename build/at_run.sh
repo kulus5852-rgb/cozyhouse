@@ -1,0 +1,3 @@
+#!/bin/sh
+# usage: build/at_run.sh phase   -> runs __AT.<phase>() and prints a table
+cd /d/cozyses && node tools/build.mjs --only audio --out build/audio.html --extra build/audio_test.js >/dev/null && node tools/shot.mjs --html build/audio.html --noshots --outdir shots/audio --params "mute=1" --timeout 170000 --eval "return __AT.$1()" 2>&1 | tail -1 | node -e "const s=require('fs').readFileSync(0,'utf8');const j=JSON.parse(s.slice(s.indexOf('{')));console.log('errors',j.pageErrors,j.consoleErrors,j.moduleErrors);const r=j.evalResults[0];if(typeof r==='string')console.log(r);else for(const[k,v]of Object.entries(r))console.log(k.padEnd(30),JSON.stringify(v))"

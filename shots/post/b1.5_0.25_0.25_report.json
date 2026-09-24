@@ -1,0 +1,86 @@
+{
+  "url": "file:///D:/cozyses/build/post.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "living_overview",
+      "file": "shots/post/b1.5_0.25_0.25_living_overview.png",
+      "info": {
+        "drawCalls": 82,
+        "triangles": 73709,
+        "fps": 144
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 2082,
+  "evalResults": [
+    0.25
+  ],
+  "info": {
+    "fps": 144,
+    "drawCalls": 82,
+    "triangles": 73709,
+    "geometries": 63,
+    "textures": 70,
+    "programs": 26,
+    "lights": 7,
+    "meshes": 92,
+    "colliders": 32,
+    "interactables": 6,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 362.8,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": 0.1,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 628.7,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 12.8,
+        "error": false
+      },
+      {
+        "name": "post",
+        "order": 90,
+        "initMs": 5,
+        "error": false
+      },
+      {
+        "name": "post_lamps",
+        "order": 61,
+        "initMs": 18.2,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 1.2,
+      "y": 1.75,
+      "z": 0.8,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

@@ -1,0 +1,89 @@
+{
+  "url": "file:///D:/cozyses/build/kitchen.html?debug=1&autostart=1&lightning=0&seed=7",
+  "views": [
+    {
+      "name": "kitchen",
+      "file": "shots/kitchen/base/kitchen.png",
+      "info": {
+        "drawCalls": 35,
+        "triangles": 62964,
+        "fps": 142.1
+      }
+    },
+    {
+      "name": "dining",
+      "file": "shots/kitchen/base/dining.png",
+      "info": {
+        "drawCalls": 37,
+        "triangles": 63460,
+        "fps": 142.1
+      }
+    },
+    {
+      "name": "kitchen_stove",
+      "file": "shots/kitchen/base/kitchen_stove.png",
+      "info": {
+        "drawCalls": 31,
+        "triangles": 62572,
+        "fps": 144
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 1834,
+  "info": {
+    "fps": 144,
+    "drawCalls": 31,
+    "triangles": 62572,
+    "geometries": 43,
+    "textures": 50,
+    "programs": 12,
+    "lights": 4,
+    "meshes": 69,
+    "colliders": 32,
+    "interactables": 3,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 418.4,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": 0.2,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 667.5,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 1.3,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 12.4,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": -1.6,
+      "y": 1.6,
+      "z": -2.6,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}
