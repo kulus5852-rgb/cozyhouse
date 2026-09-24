@@ -1,5 +1,5 @@
 // Deterministic walk / collision tests driven through COZY.debug.simulate (implemented by the player module).
-// Usage: node tools/walktest.mjs [--html cozy-house.html] [--only name1,name2] [--params "k=v"]
+// Usage: node tools/walktest.mjs [--html cozy-house.html] [--only name1,name2] [--params "k=v"] [--timeout 60000]
 // Each scenario in tools/walktests.json:
 //   { name, reload?, pre?: "js run in page before (e.g. open a door)", preWait?: ms,
 //     from?: [x,y,z] feet (omit = continue from current state), yaw?, pitch?,
@@ -9,29 +9,28 @@
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 import path from 'path';
+import { ROOT, CHROME, GPU_ARGS, pageUrl } from './chrome.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
-const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
 const argv = process.argv.slice(2);
 function arg(name, def) { const i = argv.indexOf('--' + name); if (i < 0) return def; const v = argv[i + 1]; return (v === undefined || v.startsWith('--')) ? true : v; }
 
 const htmlPath = path.resolve(ROOT, arg('html', 'cozy-house.html'));
 const only = arg('only', null);
 const params = arg('params', '') === true ? '' : arg('params', '');
+const timeout = +arg('timeout', 60000);
 let tests = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools', 'walktests.json'), 'utf8'));
 if (only && only !== true) { const s = new Set(only.split(',')); tests = tests.filter(t => s.has(t.name)); }
-const url = 'file:///' + htmlPath.replace(/\\/g, '/') + '?debug=1&autostart=1&lightning=0&seed=7' + (params ? '&' + params : '');
+const url = pageUrl(htmlPath, 'debug=1&autostart=1&lightning=0&seed=7' + (params ? '&' + params : ''));
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true,
-  args: ['--headless=new', '--no-first-run', '--allow-file-access-from-files', '--enable-gpu', '--ignore-gpu-blocklist'],
+  args: ['--headless=new', '--no-first-run', '--allow-file-access-from-files', ...GPU_ARGS],
   defaultViewport: { width: 960, height: 540 } });
 const page = await browser.newPage();
 const pageErrors = [];
 page.on('pageerror', e => pageErrors.push(String(e.message || e).slice(0, 400)));
 async function load() {
-  await page.goto(url, { waitUntil: 'load', timeout: 60000 });
-  await page.waitForFunction('(window.COZY && window.COZY.ready === true) || window.__COZY_BOOT_FAILED', { timeout: 60000, polling: 100 });
+  await page.goto(url, { waitUntil: 'load', timeout });
+  await page.waitForFunction('(window.COZY && window.COZY.ready === true) || window.__COZY_BOOT_FAILED', { timeout, polling: 100 });
   await new Promise(r => setTimeout(r, 400));
 }
 function check(exprs, r) {

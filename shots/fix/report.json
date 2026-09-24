@@ -1,0 +1,119 @@
+{
+  "url": "file:///tmp/hoplite/workspace/cozy-house.html?debug=1&autostart=1&lightning=0&seed=7&quality=medium&mute=1",
+  "views": [
+    {
+      "name": "spawn",
+      "file": "shots/fix/spawn.png",
+      "info": {
+        "drawCalls": 285,
+        "triangles": 724273,
+        "fps": 0.1
+      }
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "requestFailures": [],
+  "ready": true,
+  "bootMs": 20214,
+  "info": {
+    "fps": 0.1,
+    "drawCalls": 285,
+    "triangles": 724273,
+    "geometries": 256,
+    "textures": 145,
+    "programs": 56,
+    "lights": 17,
+    "meshes": 583,
+    "colliders": 147,
+    "interactables": 28,
+    "modules": [
+      {
+        "name": "materials",
+        "order": 5,
+        "initMs": 678.5,
+        "error": false
+      },
+      {
+        "name": "props",
+        "order": 6,
+        "initMs": 0.2,
+        "error": false
+      },
+      {
+        "name": "house",
+        "order": 20,
+        "initMs": 1440.8,
+        "error": false
+      },
+      {
+        "name": "player",
+        "order": 10,
+        "initMs": 0.8,
+        "error": false
+      },
+      {
+        "name": "weather",
+        "order": 30,
+        "initMs": 43.6,
+        "error": false
+      },
+      {
+        "name": "outdoor",
+        "order": 40,
+        "initMs": 758.5,
+        "error": false
+      },
+      {
+        "name": "audio",
+        "order": 50,
+        "initMs": 0.3,
+        "error": false
+      },
+      {
+        "name": "living",
+        "order": 60,
+        "initMs": 3910,
+        "error": false
+      },
+      {
+        "name": "kitchen",
+        "order": 60,
+        "initMs": 2698.6,
+        "error": false
+      },
+      {
+        "name": "hallstudy",
+        "order": 60,
+        "initMs": 1701.7,
+        "error": false
+      },
+      {
+        "name": "loft",
+        "order": 60,
+        "initMs": 2151.1,
+        "error": false
+      },
+      {
+        "name": "cat",
+        "order": 70,
+        "initMs": 1105.6,
+        "error": false
+      },
+      {
+        "name": "post",
+        "order": 90,
+        "initMs": 6.2,
+        "error": false
+      }
+    ],
+    "player": {
+      "x": 0.4,
+      "y": 1.62,
+      "z": 2,
+      "mode": "noclip"
+    }
+  },
+  "moduleErrors": []
+}

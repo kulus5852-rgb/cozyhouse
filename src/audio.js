@@ -27,8 +27,9 @@ function interp(bp, u) {                                           // piecewise-
 }
 
 // Level table (calibrated with build/audio_test.js — see final report). All values are linear gains.
+// roof / glass: lowered and low-passed after playtesting — the loft was far louder than downstairs.
 const LV = {
-  wash: 0.42, ticks: 0.5, low: 0.45, inside: 0.3, roof: 0.4, porch: 0.5, leak: 0.55, glass: 0.55, gutter: 0.6,
+  wash: 0.42, ticks: 0.5, low: 0.45, inside: 0.3, roof: 0.14, porch: 0.5, leak: 0.55, glass: 0.2, gutter: 0.6,
   drop: 0.2, wind: 0.6, whistle: 0.08, fireBed: 0.35, fireCrackle: 0.5, pop: 0.2, clock: 0.38, thunder: 0.95,
   piano: 0.14, bass: 0.28, drums: 0.17, vinyl: 0.25, loop: 0.5, kettle: 0.45, whistleK: 0.022, purr: 0.3,
 };
@@ -1325,12 +1326,16 @@ function startAmbience() {
     loopSource('rainTicksA', g, 1, 0); loopSource('rainTicksB', g, 1, 0.3);
   });
   whenBuf('rainLow', () => { const lp = filt('lowpass', 220, 0.6); lp.connect(G.rain); layers.low = loopSource('rainLow', lp, 0, 0); });
-  whenBuf('roof', () => { layers.roof = loopSource('roof', G.rain, 0, 0); });
+  whenBuf('roof', () => {            // rain on the roof heard from the loft, muffled by the boards and insulation
+    const lp = filt('lowpass', 750, 0.6); lp.connect(G.rain);
+    layers.roof = loopSource('roof', lp, 0, 0);
+  });
   whenBuf('porch', () => { layers.porch = loopSource('porch', G.rain, 0, 0); });
   whenBuf('glass', () => {           // skylights sk_1..sk_3 (glass centre on the roof underside)
     layers.glass = [[-5.45, 1.75], [-2.85, 1.75], [4.25, -1.75]].map(([x, z], i) => {
       const em = makeEmitter({ x, y: 7.5 - 0.7 * Math.abs(z), z, group: 'rain', model: 'equalpower', ref: 1.2, rolloff: 1.2 });
-      return loopSource('glass', em.input, 0, i * 0.33, 1 + (i - 1) * 0.04);
+      const lp = filt('lowpass', 2600, 0.6); lp.connect(em.input);          // soft taps on the glass, not bright ticks
+      return loopSource('glass', lp, 0, i * 0.33, 1 + (i - 1) * 0.04);
     });
   });
   whenBuf('gutter', () => {          // gutter trickle + downspout gurgle at the four outlets

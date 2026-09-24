@@ -135,7 +135,7 @@ C.register({
         physics.resolve(tmpV, p.radius, p.height, p.stepUp);
         const blocked = tmpV.distanceToSquared(pos) > 1e-4 || pos.y + p.height > ceilingAt(pos.x, pos.z, pos.y);
         if (!blocked) p.crouch = Math.max(0, p.crouch - dt * 6);
-      } else p.crouch = Math.min(1, p.crouch + dt * 6);
+      } else if (crouchTarget > p.crouch) p.crouch = Math.min(1, p.crouch + dt * 6);   // plain `else` bounced 0 ↔ dt·6 every frame
       const height = standingHeight();
 
       const speed = p.crouch > 0.5 ? CROUCH : run ? RUN : WALK;
@@ -227,15 +227,14 @@ C.register({
         const k = 140, c = 2 * Math.sqrt(k) * 0.8;
         st.dipV += (-k * st.dip - c * st.dipV) * dt;
         st.dip += st.dipV * dt;
-        let bx = 0, by = 0;
-        if (C.settings.headBob !== false) {
-          const a = st.bobAmp * (st.running ? 1.35 : 1);
-          by = -Math.cos(st.stepPhase * Math.PI * 2) * 0.026 * a + Math.sin(t * 1.3) * 0.004;
-          bx = Math.sin(st.stepPhase * Math.PI) * 0.018 * a;
+        // optional head bob (Settings, off by default): a small vertical bounce per step, perfectly still when idle
+        let by = 0;
+        if (C.settings.headBob) {
+          const a = st.bobAmp * (st.running ? 1.3 : 1);
+          by = -Math.cos(st.stepPhase * Math.PI * 2) * 0.007 * a;
         }
-        p.bob.set(bx, by + st.dip, 0);
-        const cy = Math.cos(yaw), sy = Math.sin(yaw);
-        tx = p.position.x + cy * bx; ty = p.position.y + eyeH + by + st.dip; tz = p.position.z - sy * bx;
+        p.bob.set(0, by + st.dip, 0);
+        tx = p.position.x; ty = p.position.y + eyeH + by + st.dip; tz = p.position.z;
       }
       eye.set(tx, ty, tz);
       if (st.trans > 0) {

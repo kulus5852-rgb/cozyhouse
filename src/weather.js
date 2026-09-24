@@ -56,7 +56,7 @@ const RAIN_LEVELS = [
   { name: 'rain', level: 0.7, toast: 'Steady rain' },
   { name: 'storm', level: 1.0, toast: 'A storm rolls in' },
 ];
-const INDOOR_HEMI = 0.13, INDOOR_DIR = 0.06;         // sky light multipliers when the camera is fully indoors
+const INDOOR_HEMI = 0.08, INDOOR_DIR = 0.06;         // sky light multipliers when the camera is fully indoors
 const GROUND_Y = -0.45;
 const OUTLETS = [[7.1, -5.15], [-7.1, -5.15], [7.1, 5.15], [-7.1, 5.15]];
 

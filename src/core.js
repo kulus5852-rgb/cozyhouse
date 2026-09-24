@@ -34,7 +34,7 @@ C.log = (tag, ...args) => { if (DEBUG) console.debug(`[${tag}]`, ...args); };
 // Settings
 // ---------------------------------------------------------------------------------------------------------------------
 const DEFAULT_SETTINGS = { masterVolume: 0.8, musicVolume: 0.7, ambienceVolume: 0.9, sfxVolume: 0.8, mouseSensitivity: 1.0,
-  invertY: false, fov: 70, quality: 'high', headBob: true, showFps: false };
+  invertY: false, fov: 70, quality: 'high', headBob: false, showFps: false };
 let savedSettings = {};
 try { savedSettings = JSON.parse(localStorage.getItem('cozy-settings-v1') || '{}') || {}; } catch (e) { savedSettings = {}; }
 C.settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
