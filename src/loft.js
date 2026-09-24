@@ -5,7 +5,8 @@
 //  East nook by w_loft_e: reading chair + floor lamp, beanbag, floor cushions, low bookshelf, telescope, hanging plant.
 //  Eaves: low bookshelves + trunks behind the eave colliders.  Middle: little writing desk + stool.
 //  Interactables: bed, lamp_loft_bedside, lights_loft_string, lamp_loft_nook, loft_chair.
-//  Lights: lamp_loft_bedside (Point 3 cd), lamp_loft_nook (Point 4 cd), lights_loft_string (2 × Point #ffcf8a 2.2 cd).
+//  Lights: lamp_loft_bedside (Point 2.0 cd, decay 1.5: it stands near the gable wall), lamp_loft_nook (Point 3.2 cd),
+//  lights_loft_string (2 × Point #ffcf8a 1.8 cd).
 //  Exposes C.loft = { catSpots, seats, stringLights: { on, toggle() } }.
 // =====================================================================================================================
 import * as THREE from 'three';
@@ -13,7 +14,7 @@ import * as THREE from 'three';
 const C = window.COZY;
 const PI = Math.PI;
 const Y = 3.0;
-const STRING_CD = 2.2;
+const STRING_CD = 1.8;
 
 const st = { ready: false };
 
@@ -112,8 +113,8 @@ C.register({
         for (const x of [-6.7, -6.3]) for (const z of [z0 + 0.03, z1 - 0.03]) U.cyl(S, 0.015, 0.012, 0.08, M.dark, x, Y + 0.04, z, { radial: 8 });
         addBox(-6.75, Y, z0 - 0.02, -6.24, Y + 0.6, z1 + 0.02, 'nightstand');
       }
-      PR.lamp({ id: 'lamp_loft_bedside', type: 'table', position: [-6.52, Y + 0.57, 1.28], height: 0.5, intensity: 3, bodyColor: 0xc98f8a, room: 'loft', parent: D, label: 'bedside lamp' });
-      PR.bookStack({ parent: S, count: 2, position: [-6.45, Y + 0.57, 1.12], rotationY: 0.4, seed: 121 });
+      PR.lamp({ id: 'lamp_loft_bedside', type: 'table', position: [-6.4, Y + 0.57, 1.32], height: 0.5, intensity: 2.0, decay: 1.5, bodyColor: 0xc98f8a, room: 'loft', parent: D, label: 'bedside lamp' });
+      PR.bookStack({ parent: S, count: 2, position: [-6.47, Y + 0.57, 1.1], rotationY: 0.4, seed: 121 });
       PR.clock({ parent: S, position: [-6.55, Y + 0.57, -1.32], rotationY: PI / 2 - 0.3, scale: 0.55 });
       PR.mug({ parent: S, position: [-6.4, Y + 0.57, -1.12], color: 0x8fa487, fill: 'cocoa' });
       PR.bookStack({ parent: S, count: 3, position: [-6.5, Y + 0.08, -1.25], rotationY: 0.1, seed: 122 });
@@ -270,7 +271,7 @@ C.register({
       P.addCylinder(4.6, -2.75, 0.47, Y, Y + 1.0, { tag: 'furniture', name: 'loft.readingChair' });
       const cp = proxyBox(D, hidden, -0.4, 0, -0.4, 0.4, 0.95, 0.4, 'loft.chair.pick'); cp.position.set(4.6, Y + 0.475, -2.75);
       C.interact.add({ id: 'loft_chair', object: cp, label: 'Sit in the reading chair', onUse: () => C.player.sitAt(st.seats.loft_chair) });
-      PR.lamp({ id: 'lamp_loft_nook', type: 'floor', position: [4.15, Y, -3.3], height: 1.5, intensity: 4, room: 'loft', parent: D, label: 'reading lamp', shadeColor: 0xe8d2a8 });
+      PR.lamp({ id: 'lamp_loft_nook', type: 'floor', position: [4.15, Y, -3.3], height: 1.5, intensity: 3.2, room: 'loft', parent: D, label: 'reading lamp', shadeColor: 0xe8d2a8 });
       P.addCylinder(4.15, -3.3, 0.18, Y, Y + 1.5, { tag: 'furniture', name: 'loft.nookLamp' });
       // little side table + mug + book
       U.cyl(S, 0.18, 0.18, 0.025, M.oak, 4.95, Y + 0.5, -3.35, { radial: 20 });
@@ -376,7 +377,7 @@ C.register({
       st.stringLevel += Math.sign(want - st.stringLevel) * Math.min(Math.abs(want - st.stringLevel), dt / 0.2);
     }
     const k = st.stringLevel;
-    for (let i = 0; i < st.bulbMats.length; i++) st.bulbMats[i].emissiveIntensity = k * (1.7 + 0.55 * Math.sin(t * (0.9 + i * 0.37) + i * 2.1));
+    for (let i = 0; i < st.bulbMats.length; i++) st.bulbMats[i].emissiveIntensity = k * (0.8 + 0.3 * Math.sin(t * (0.9 + i * 0.37) + i * 2.1));
     for (let i = 0; i < st.stringLights.length; i++) st.stringLights[i].intensity = STRING_CD * k * (0.94 + 0.06 * Math.sin(t * 1.1 + i));
   },
 });

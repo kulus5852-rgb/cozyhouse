@@ -5,14 +5,14 @@
 //  bookcase, floor + table lamps, window seat with cushions, curtains, roman blinds, record player + vinyl crate,
 //  plants, paintings, baskets.
 //  Interactables: fireplace, sofa, armchair, window_seat, record_player, lamp_living_floor, lamp_living_table.
-//  Lights: fire (Point #ff8a3d ~11 cd flicker, shadows on high), lamp_living_floor (4.5 cd), lamp_living_table (3 cd).
+//  Lights: fire (Point #ff8a3d ~9 cd flicker, shadows on high), lamp_living_floor (3.6 cd), lamp_living_table (2.4 cd).
 //  Exposes C.living = { catSpots, seats, fire: { level, target, light(), addLog(), putOut() } }.
 // =====================================================================================================================
 import * as THREE from 'three';
 
 const C = window.COZY;
 const PI = Math.PI;
-const FIRE_CD = 11;
+const FIRE_CD = 9;
 
 const FLAME_VS = /* glsl */`
 varying vec2 vUv;
@@ -42,7 +42,7 @@ void main() {
   vec3 col = mix(vec3(0.5, 0.05, 0.01), vec3(1.0, 0.34, 0.05), smoothstep(0.05, 0.45, f));
   col = mix(col, vec3(1.0, 0.8, 0.45), smoothstep(0.6, 1.05, f) * (1.0 - yy * 0.55));
   float a = smoothstep(0.03, 0.25, f) * min(lv, 1.0);
-  gl_FragColor = vec4(col * f * 2.4 * a, 1.0);
+  gl_FragColor = vec4(col * f * 1.55 * a, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -71,7 +71,7 @@ varying float vA;
 void main() {
   vec2 c = gl_PointCoord - 0.5; float d = dot(c, c);
   if (d > 0.25 || vA < 0.01) discard;
-  gl_FragColor = vec4(vec3(1.0, 0.55, 0.18) * (1.0 - d * 4.0) * vA * 3.0, 1.0);
+  gl_FragColor = vec4(vec3(1.0, 0.55, 0.18) * (1.0 - d * 4.0) * vA * 2.0, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -358,7 +358,7 @@ C.register({
       const sparks = new THREE.Points(sg, sm);
       sparks.name = 'living.sparks'; sparks.renderOrder = 6; sparks.raycast = () => {};
       D.add(sparks);
-      st.fireGlow = U.glowSprite(0xff7a2a, 1.5, 0.5);
+      st.fireGlow = U.glowSprite(0xff7a2a, 1.1, 0.24);
       st.fireGlow.position.set(-6.25, 0.5, 2.5);
       st.fireGlow.raycast = () => {};
       D.add(st.fireGlow);
@@ -464,13 +464,14 @@ C.register({
       U.cyl(S, 0.035, 0.045, 0.5, M.oak, sx, 0.27, sz, { radial: 12 });
       U.cyl(S, 0.16, 0.18, 0.03, M.oak, sx, 0.015, sz, { radial: 24 });
       U.blobShadow(S, sx, 0.004, sz, 0.55, 0.55, 0.38);
-      PR.lamp({ id: 'lamp_living_table', type: 'table', position: [sx + 0.04, 0.55, sz - 0.05], intensity: 3, room: 'living', parent: D });
+      PR.lamp({ id: 'lamp_living_table', type: 'table', position: [sx + 0.04, 0.55, sz - 0.05], intensity: 2.4, room: 'living', parent: D });
       PR.bookStack({ parent: S, count: 2, position: [sx - 0.1, 0.55, sz + 0.12], rotationY: 0.5, seed: 33 });
       P.addCylinder(sx, sz, 0.26, 0, 0.6, { tag: 'furniture', name: 'living.sideTable' });
 
-      PR.lamp({ id: 'lamp_living_floor', type: 'floor', position: [-2.05, 0, 3.98], intensity: 4.5, room: 'living', parent: D });
-      U.blobShadow(S, -2.05, 0.004, 3.98, 0.42, 0.42, 0.4);
-      P.addCylinder(-2.05, 3.98, 0.19, 0, 1.6, { tag: 'furniture', name: 'living.floorLamp' });
+      // just past the sofa arm, kept ~0.8 m from the curtain so its light does not scorch it
+      PR.lamp({ id: 'lamp_living_floor', type: 'floor', position: [-2.05, 0, 3.8], intensity: 3.6, room: 'living', parent: D });
+      U.blobShadow(S, -2.05, 0.004, 3.8, 0.42, 0.42, 0.4);
+      P.addCylinder(-2.05, 3.8, 0.19, 0, 1.6, { tag: 'furniture', name: 'living.floorLamp' });
     });
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -670,8 +671,8 @@ C.register({
     st.flameU.uTime.value = t;
     st.flameU.uLevel.value = lv;
     const after = f.target <= 0 ? 0.35 * Math.exp(-f.out / 45) : 0;
-    st.emberMat.emissiveIntensity = 0.15 + after + 1.3 * Math.min(lv, 1.2) * (0.9 + 0.12 * n);
-    st.fireGlow.material.opacity = 0.5 * Math.min(1, lv) * (0.9 + 0.15 * n);
+    st.emberMat.emissiveIntensity = 0.1 + after + 0.85 * Math.min(lv, 1.2) * (0.9 + 0.12 * n);
+    st.fireGlow.material.opacity = 0.24 * Math.min(1, lv) * (0.9 + 0.15 * n);
     st.fireGlow.visible = lv > 0.02;
     C.camera.getWorldPosition(_cam);
     for (let i = 0; i < st.flames.length; i++) {

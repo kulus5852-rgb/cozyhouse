@@ -2051,10 +2051,13 @@ const LAMP_DEF = {
   pendant: { intensity: 24, noun: 'pendant lamp' }, ceiling: { intensity: 14, noun: 'ceiling light' }, wall: { intensity: 9, noun: 'wall lamp' },
   lantern: { intensity: 10, noun: 'lantern' },
 };
+// Glow tuning (playtest: lamps read white-hot). Emissive glows scale by `emissive`, halo sprites by `halo` (opacity)
+// and `haloSize`. Shade interiors use unlit colours (innerGlow): the lamp's own light a few cm away blows them out.
+const GLOW = { emissive: 0.4, halo: 0.35, haloSize: 0.7 };
 
 function makeShadeMat(o, lampColor, maxEmissive = 1.1) {
   const m = M('lampshade').clone();
-  m.side = THREE.DoubleSide;
+  m.side = THREE.FrontSide;                     // outer face; the inside is drawn by shadeInner()
   if (o.shadeColor !== undefined) m.color.set(o.shadeColor).multiplyScalar(1.05);
   m.emissive = lampColor.clone();
   if (o.shadeColor !== undefined) m.emissive.lerp(new THREE.Color(o.shadeColor), 0.35);
@@ -2067,6 +2070,19 @@ function makeBulbMat(max = 3.2) {
   const m = M('bulb').clone();
   m.emissiveIntensity = 0;
   return { m, max };
+}
+// unlit surface whose colour fades off → on with the lamp (applyLamp), so it never blows out
+function innerGlow(on, off, opts = {}) {
+  const m = new THREE.MeshBasicMaterial({ color: off.clone(), side: opts.side !== undefined ? opts.side : THREE.BackSide,
+    transparent: !!opts.transparent, opacity: opts.opacity !== undefined ? opts.opacity : 1, depthWrite: !opts.transparent });
+  m.name = 'props.innerGlow';
+  return { m, on, off };
+}
+function shadeInner(parent, geo, o, id, lampColor, glows) {
+  const on = lampColor.clone().lerp(new THREE.Color(o.shadeColor !== undefined ? o.shadeColor : 0xefe0c0), 0.3).multiplyScalar(0.6);
+  const g = innerGlow(on, new THREE.Color(0x1d1a17));
+  glows.push(g);
+  meshesFrom([{ geo: prep(geo, false), mat: g.m }], parent, 'props.lamp.' + id + '.shadeIn', { dynamic: true });
 }
 
 function lamp(o = {}) {
@@ -2081,9 +2097,10 @@ function lamp(o = {}) {
   const lampColor = new THREE.Color(o.color !== undefined ? o.color : 0xffb46b);
   const mk = metal(o.metal || (type === 'lantern' ? 'iron' : 'brass'));
   const parts = new Parts();
-  const glows = [];           // { m, max } emissive materials that fade with the lamp
+  const glows = [];           // materials that fade with the lamp: { m, max } emissive, or { m, on, off } unlit colour
   let lightPos = [0, 0, 0], spriteSize = 0.6, spriteOpacity = 0.55, spritePos = null;
   let spotTarget = null;
+  let spotAngle = 1.0, spotPenumbra = 0.65;
 
   if (type === 'floor') {
     const H = o.height || 1.6;
@@ -2118,6 +2135,7 @@ function lamp(o = {}) {
     parts.add(gCyl(0.013, 0.017, 0.03, 12, 0, bY - 0.035, 0), bulb.m);
     parts.build(inner, 'props.lamp.' + id + '.body', { dynamic: true });
     meshesFrom([{ geo: prep(shade, false), mat: sh.m }], inner, 'props.lamp.' + id + '.shade', { dynamic: true });
+    shadeInner(inner, shade, o, id, lampColor, glows);
     lightPos = [0, bY, 0]; spriteSize = 0.95; spriteOpacity = 0.5;
   } else if (type === 'table') {
     const H = o.height || 0.6, k = H / 0.6;
@@ -2144,6 +2162,7 @@ function lamp(o = {}) {
     parts.add(gSph(0.026, 0, bY, 0, 1, 1.18, 1), bulb.m);
     parts.build(inner, 'props.lamp.' + id + '.body', { dynamic: true });
     meshesFrom([{ geo: prep(shade, false), mat: sh.m }], inner, 'props.lamp.' + id + '.shade', { dynamic: true });
+    shadeInner(inner, shade, o, id, lampColor, glows);
     lightPos = [0, bY, 0]; spriteSize = 0.6; spriteOpacity = 0.5;
   } else if (type === 'desk') {
     const H = o.height || 0.42;
@@ -2158,9 +2177,9 @@ function lamp(o = {}) {
     gm.emissive = new THREE.Color(glassCol).lerp(lampColor, 0.2); gm.emissiveIntensity = 0;
     gm.name = 'props.bankerglass.' + id;
     glows.push({ m: gm, max: 0.25 });
-    const opal = C.util.stdMat(0xf6efe0, 0.35, 0).clone();
-    opal.side = THREE.BackSide; opal.emissive = lampColor.clone(); opal.emissiveIntensity = 0; opal.name = 'props.bankeropal.' + id;
-    glows.push({ m: opal, max: 0.8 });
+    const opalGlow = innerGlow(lampColor.clone().lerp(new THREE.Color(0xffffff), 0.3).multiplyScalar(0.55), new THREE.Color(0x2c2a26));
+    const opal = opalGlow.m; opal.name = 'props.bankeropal.' + id;
+    glows.push(opalGlow);
     const sy = H - 0.03, len = 0.27, R = 0.07;
     const shadeG = new THREE.CylinderGeometry(R, R, len, 24, 1, true, 0, Math.PI);
     // axis along X, opening facing down
@@ -2202,12 +2221,14 @@ function lamp(o = {}) {
       parts.add(gBox(0.46, 0.003, 0.003, 0, sb + 0.235, 0), mk); parts.add(gBox(0.003, 0.003, 0.46, 0, sb + 0.235, 0), mk);
       parts.add(gSph(0.032, 0, sb + 0.11, 0, 1, 1.15, 1), bulb.m);
       meshesFrom([{ geo: prep(shade, false), mat: sh.m }], inner, 'props.lamp.' + id + '.shade', { dynamic: true });
+      shadeInner(inner, shade, o, id, lampColor, glows);
       lightPos = [0, sb + 0.1, 0]; spriteSize = 1.0; spriteOpacity = 0.45;
     } else if (style === 'glass') {
       const gc = o.shadeColor !== undefined ? o.shadeColor : 0xd9a55a;
-      const gm = new THREE.MeshStandardMaterial({ color: gc, roughness: 0.2, metalness: 0, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide, emissive: new THREE.Color(gc).lerp(lampColor, 0.5), emissiveIntensity: 0 });
-      gm.name = 'props.pendantglass.' + id;
-      glows.push({ m: gm, max: 1.2 });
+      const gcol = new THREE.Color(gc);
+      const glass = innerGlow(gcol.clone().lerp(lampColor, 0.5).multiplyScalar(0.75), gcol.clone().multiplyScalar(0.3), { side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+      const gm = glass.m; gm.name = 'props.pendantglass.' + id;
+      glows.push(glass);
       const sb = -drop;
       const prof = []; for (let i = 0; i <= 10; i++) { const t = i / 10; prof.push([0.03 + 0.13 * Math.pow(Math.sin(t * Math.PI * 0.5), 0.8) * (1 - 0.1 * t), sb + 0.19 * (1 - t)]); }
       prof.reverse();
@@ -2226,9 +2247,9 @@ function lamp(o = {}) {
       }
       const outerCol = o.shadeColor !== undefined ? o.shadeColor : 0x3d5a47;
       const outerM = C.util.stdMat(outerCol, 0.3, 0.05);
-      const inM = C.util.stdMat(0xf4efe4, 0.4, 0).clone();
-      inM.side = THREE.BackSide; inM.emissive = lampColor.clone(); inM.emissiveIntensity = 0; inM.name = 'props.enamelIn.' + id;
-      glows.push({ m: inM, max: 0.55 });
+      const enamel = innerGlow(lampColor.clone().lerp(new THREE.Color(0xffffff), 0.35).multiplyScalar(0.6), new THREE.Color(0x3b3833));
+      const inM = enamel.m; inM.name = 'props.enamelIn.' + id;
+      glows.push(enamel);
       parts.add(gLathe(prof, 36), outerM);
       // rolled rim
       parts.add(gTorus(0.2, 0.006, 6, 48, TAU, 0, sb + 0.012, 0, Math.PI / 2), outerM);
@@ -2236,6 +2257,8 @@ function lamp(o = {}) {
       meshesFrom([{ geo: prep(innerG, false), mat: inM }], inner, 'props.lamp.' + id + '.shadeIn', { dynamic: true });
       parts.add(gSph(0.034, 0, sb + 0.085, 0, 1, 1.12, 1), bulb.m);
       lightPos = [0, sb + 0.08, 0]; spriteSize = 0.8; spriteOpacity = 0.55; spritePos = [0, sb + 0.04, 0];
+      // opaque metal dome: light only leaves downwards (a point light would light the ceiling through it)
+      spotTarget = [0, sb - 1.5, 0]; spotAngle = 1.2; spotPenumbra = 0.75;
     }
     parts.build(inner, 'props.lamp.' + id + '.body', { dynamic: true });
   } else if (type === 'ceiling') {
@@ -2268,6 +2291,7 @@ function lamp(o = {}) {
     parts.add(gTorus(0.0525, 0.0025, 4, 28, TAU, 0, st, cz, Math.PI / 2), trimM);
     parts.build(inner, 'props.lamp.' + id + '.body', { dynamic: true });
     meshesFrom([{ geo: prep(shade, false), mat: sh.m }], inner, 'props.lamp.' + id + '.shade', { dynamic: true });
+    shadeInner(inner, shade, o, id, lampColor, glows);
     lightPos = [0, bY, cz + 0.02]; spriteSize = 0.55; spriteOpacity = 0.5;
   } else if (type === 'lantern') {
     const mount = o.mount || o.style || 'wall';
@@ -2292,9 +2316,9 @@ function lamp(o = {}) {
     parts.add(gCyl(0.02, 0.028, 0.03, 12, cx, topY + 0.12, cz), mk);
     parts.add(gSph(0.012, cx, topY + 0.145, cz), mk);
     if (mount === 'stand' || mount === 'hang') parts.add(gTorus(0.035, 0.005, 5, 18, Math.PI, cx, topY + 0.15, cz), mk);
-    const gm = new THREE.MeshStandardMaterial({ color: 0xf4e2c0, roughness: 0.15, metalness: 0, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, emissive: lampColor.clone(), emissiveIntensity: 0 });
-    gm.name = 'props.lanternglass.' + id;
-    glows.push({ m: gm, max: 0.7 });
+    const lglass = innerGlow(lampColor.clone().lerp(new THREE.Color(0xf4e2c0), 0.4).multiplyScalar(0.7), new THREE.Color(0xf4e2c0).multiplyScalar(0.12), { side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+    const gm = lglass.m; gm.name = 'props.lanternglass.' + id;
+    glows.push(lglass);
     const pan = new Parts();
     for (let k = 0; k < 4; k++) {
       const a = k * Math.PI / 2;
@@ -2311,8 +2335,8 @@ function lamp(o = {}) {
   // light
   const intensity = o.intensity !== undefined ? o.intensity : def.intensity;
   let light;
-  if (type === 'desk') {
-    light = new THREE.SpotLight(lampColor, 0, o.distance || 0, o.angle || 1.0, o.penumbra !== undefined ? o.penumbra : 0.65, o.decay !== undefined ? o.decay : 2);
+  if (spotTarget) {
+    light = new THREE.SpotLight(lampColor, 0, o.distance || 0, o.angle || spotAngle, o.penumbra !== undefined ? o.penumbra : spotPenumbra, o.decay !== undefined ? o.decay : 2);
     const tgt = new THREE.Object3D(); tgt.name = 'props.lamp.' + id + '.target';
     tgt.position.set(spotTarget[0], spotTarget[1], spotTarget[2]);
     inner.add(tgt);
@@ -2334,7 +2358,7 @@ function lamp(o = {}) {
 
   // halo
   const gm = o.glow !== undefined ? o.glow : 1;
-  const sprite = C.util.glowSprite(lampColor.getHex(), spriteSize * gm, 0);
+  const sprite = C.util.glowSprite(lampColor.getHex(), spriteSize * gm * GLOW.haloSize, 0);
   const sp = spritePos || lightPos;
   sprite.position.set(sp[0], sp[1], sp[2]);
   sprite.raycast = () => {};
@@ -2342,7 +2366,7 @@ function lamp(o = {}) {
   inner.add(sprite);
 
   const L = {
-    id, type, group: g, light, intensity, glows, sprite, spriteOpacity: spriteOpacity * Math.min(1, gm),
+    id, type, group: g, light, intensity, glows, sprite, spriteOpacity: spriteOpacity * Math.min(1, gm) * GLOW.halo,
     level: 0, target: 0, interactable: null,
     get on() { return this.target > 0.5; },
     setOn(v, instant) {
@@ -2374,7 +2398,11 @@ function lamp(o = {}) {
 function applyLamp(L) {
   const k = smooth(clamp(L.level, 0, 1));
   L.light.intensity = L.intensity * k;
-  for (let i = 0; i < L.glows.length; i++) L.glows[i].m.emissiveIntensity = L.glows[i].max * k;
+  for (let i = 0; i < L.glows.length; i++) {
+    const gl = L.glows[i];
+    if (gl.on) gl.m.color.copy(gl.off).lerp(gl.on, k);
+    else gl.m.emissiveIntensity = gl.max * k * GLOW.emissive;
+  }
   L.sprite.material.opacity = L.spriteOpacity * k;
   L.sprite.visible = k > 0.002;
 }
@@ -2395,7 +2423,7 @@ function flameGeo() {
 }
 function flameMat() {
   if (_flameMat) return _flameMat;
-  _flameMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.6, 0.22).multiplyScalar(2.4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  _flameMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.6, 0.22).multiplyScalar(1.4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
   _flameMat.name = 'props.flame';
   return _flameMat;
 }
@@ -2406,11 +2434,11 @@ function addFlame(parent, x, y, z, size = 1, lit = true) {
   f.userData.dynamic = true;
   f.name = 'props.flame';
   f.raycast = () => {};
-  const halo = C.util.glowSprite(0xffa048, 0.2 * size, 0.55);
+  const halo = C.util.glowSprite(0xffa048, 0.14 * size, 0.22);
   halo.position.set(x, y + 0.02 * size, z);
   halo.raycast = () => {};
   parent.add(f); parent.add(halo);
-  const c = { flame: f, halo, base: size, ph: Math.random() * 100, lit, haloOp: 0.55 };
+  const c = { flame: f, halo, base: size, ph: Math.random() * 100, lit, haloOp: 0.22 };
   f.visible = halo.visible = lit;
   S.candles.push(c);
   return c;
@@ -10001,14 +10029,14 @@ C.register({
 //  bookcase, floor + table lamps, window seat with cushions, curtains, roman blinds, record player + vinyl crate,
 //  plants, paintings, baskets.
 //  Interactables: fireplace, sofa, armchair, window_seat, record_player, lamp_living_floor, lamp_living_table.
-//  Lights: fire (Point #ff8a3d ~11 cd flicker, shadows on high), lamp_living_floor (4.5 cd), lamp_living_table (3 cd).
+//  Lights: fire (Point #ff8a3d ~9 cd flicker, shadows on high), lamp_living_floor (3.6 cd), lamp_living_table (2.4 cd).
 //  Exposes C.living = { catSpots, seats, fire: { level, target, light(), addLog(), putOut() } }.
 // =====================================================================================================================
 import * as THREE from 'three';
 
 const C = window.COZY;
 const PI = Math.PI;
-const FIRE_CD = 11;
+const FIRE_CD = 9;
 
 const FLAME_VS = /* glsl */`
 varying vec2 vUv;
@@ -10038,7 +10066,7 @@ void main() {
   vec3 col = mix(vec3(0.5, 0.05, 0.01), vec3(1.0, 0.34, 0.05), smoothstep(0.05, 0.45, f));
   col = mix(col, vec3(1.0, 0.8, 0.45), smoothstep(0.6, 1.05, f) * (1.0 - yy * 0.55));
   float a = smoothstep(0.03, 0.25, f) * min(lv, 1.0);
-  gl_FragColor = vec4(col * f * 2.4 * a, 1.0);
+  gl_FragColor = vec4(col * f * 1.55 * a, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -10067,7 +10095,7 @@ varying float vA;
 void main() {
   vec2 c = gl_PointCoord - 0.5; float d = dot(c, c);
   if (d > 0.25 || vA < 0.01) discard;
-  gl_FragColor = vec4(vec3(1.0, 0.55, 0.18) * (1.0 - d * 4.0) * vA * 3.0, 1.0);
+  gl_FragColor = vec4(vec3(1.0, 0.55, 0.18) * (1.0 - d * 4.0) * vA * 2.0, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -10354,7 +10382,7 @@ C.register({
       const sparks = new THREE.Points(sg, sm);
       sparks.name = 'living.sparks'; sparks.renderOrder = 6; sparks.raycast = () => {};
       D.add(sparks);
-      st.fireGlow = U.glowSprite(0xff7a2a, 1.5, 0.5);
+      st.fireGlow = U.glowSprite(0xff7a2a, 1.1, 0.24);
       st.fireGlow.position.set(-6.25, 0.5, 2.5);
       st.fireGlow.raycast = () => {};
       D.add(st.fireGlow);
@@ -10460,13 +10488,14 @@ C.register({
       U.cyl(S, 0.035, 0.045, 0.5, M.oak, sx, 0.27, sz, { radial: 12 });
       U.cyl(S, 0.16, 0.18, 0.03, M.oak, sx, 0.015, sz, { radial: 24 });
       U.blobShadow(S, sx, 0.004, sz, 0.55, 0.55, 0.38);
-      PR.lamp({ id: 'lamp_living_table', type: 'table', position: [sx + 0.04, 0.55, sz - 0.05], intensity: 3, room: 'living', parent: D });
+      PR.lamp({ id: 'lamp_living_table', type: 'table', position: [sx + 0.04, 0.55, sz - 0.05], intensity: 2.4, room: 'living', parent: D });
       PR.bookStack({ parent: S, count: 2, position: [sx - 0.1, 0.55, sz + 0.12], rotationY: 0.5, seed: 33 });
       P.addCylinder(sx, sz, 0.26, 0, 0.6, { tag: 'furniture', name: 'living.sideTable' });
 
-      PR.lamp({ id: 'lamp_living_floor', type: 'floor', position: [-2.05, 0, 3.98], intensity: 4.5, room: 'living', parent: D });
-      U.blobShadow(S, -2.05, 0.004, 3.98, 0.42, 0.42, 0.4);
-      P.addCylinder(-2.05, 3.98, 0.19, 0, 1.6, { tag: 'furniture', name: 'living.floorLamp' });
+      // just past the sofa arm, kept ~0.8 m from the curtain so its light does not scorch it
+      PR.lamp({ id: 'lamp_living_floor', type: 'floor', position: [-2.05, 0, 3.8], intensity: 3.6, room: 'living', parent: D });
+      U.blobShadow(S, -2.05, 0.004, 3.8, 0.42, 0.42, 0.4);
+      P.addCylinder(-2.05, 3.8, 0.19, 0, 1.6, { tag: 'furniture', name: 'living.floorLamp' });
     });
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -10666,8 +10695,8 @@ C.register({
     st.flameU.uTime.value = t;
     st.flameU.uLevel.value = lv;
     const after = f.target <= 0 ? 0.35 * Math.exp(-f.out / 45) : 0;
-    st.emberMat.emissiveIntensity = 0.15 + after + 1.3 * Math.min(lv, 1.2) * (0.9 + 0.12 * n);
-    st.fireGlow.material.opacity = 0.5 * Math.min(1, lv) * (0.9 + 0.15 * n);
+    st.emberMat.emissiveIntensity = 0.1 + after + 0.85 * Math.min(lv, 1.2) * (0.9 + 0.12 * n);
+    st.fireGlow.material.opacity = 0.24 * Math.min(1, lv) * (0.9 + 0.15 * n);
     st.fireGlow.visible = lv > 0.02;
     C.camera.getWorldPosition(_cam);
     for (let i = 0; i < st.flames.length; i++) {
@@ -10695,7 +10724,7 @@ C.register({
 //  Tea ritual: "Put the kettle on" → boil → whistle → "Make a cup of tea" → steaming mug in hand;
 //  Q / left click sips, E (nothing focused) sets it down on the surface under the crosshair.
 //  Interactables: kettle, lamp_dining_pendant, lamp_kitchen, dining_chair.
-//  Lights: lamp_dining_pendant (Point #ffc27a 6.5 cd), lamp_kitchen (Point #ffd29a 4 cd).
+//  Lights: lamp_dining_pendant (Point #ffc27a 5.2 cd), lamp_kitchen (Point #ffd29a 3.2 cd).
 // =====================================================================================================================
 import * as THREE from 'three';
 
@@ -11109,8 +11138,8 @@ C.register({
       const cp = proxyBox(D, hidden, -0.23, 0, -0.23, 0.23, 0.95, 0.23, 'kitchen.diningChair.pick');
       cp.position.set(cx + 0.4, 0.475, cz + 0.8); cp.rotation.y = PI + 0.04;
       C.interact.add({ id: 'dining_chair', object: cp, label: 'Sit at the table', onUse: () => C.player.sitAt(st.seat) });
-      PR.lamp({ id: 'lamp_dining_pendant', type: 'pendant', style: 'dome', position: [cx, 2.8, cz], height: 1.02, intensity: 6.5, color: 0xffc27a, room: 'kitchen', parent: D, label: 'pendant lamp' });
-      PR.lamp({ id: 'lamp_kitchen', type: 'pendant', style: 'glass', position: [-1.9, 2.8, -3.55], height: 0.68, intensity: 4, color: 0xffd29a, room: 'kitchen', parent: D, label: 'kitchen light' });
+      PR.lamp({ id: 'lamp_dining_pendant', type: 'pendant', style: 'dome', position: [cx, 2.8, cz], height: 1.02, intensity: 5.2, color: 0xffc27a, room: 'kitchen', parent: D, label: 'pendant lamp' });
+      PR.lamp({ id: 'lamp_kitchen', type: 'pendant', style: 'glass', position: [-1.9, 2.8, -3.55], height: 0.68, intensity: 3.2, color: 0xffd29a, room: 'kitchen', parent: D, label: 'kitchen light' });
       PR.plant({ parent: S, type: 'monstera', position: [-6.2, 0, -0.35], scale: 0.9, seed: 92 });
       P.addCylinder(-6.2, -0.35, 0.22, 0, 1.0, { tag: 'furniture', name: 'kitchen.monstera' });
       PR.painting({ parent: S, width: 0.55, height: 0.42, style: 'cottage', frame: 'wood', position: [-6.75, 1.6, -0.4], rotationY: PI / 2, seed: 93 });
@@ -11237,8 +11266,9 @@ C.register({
 //  Study: desk under w_study_n (typewriter, open journal, ink, papers, banker's lamp), captain's desk chair,
 //  floor-to-ceiling bookshelves on P1, leather reading chair by the east window, globe, map chest, framed maps,
 //  kilim rug, plants, cat bed.
-//  Interactables: clock, lamp_hall, lamp_study_desk, desk_chair.  Lights: lamp_hall (Point 4 cd), lamp_study_desk
-//  (Spot 7 cd).  Exposes C.hallstudy = { catBed, seat }.
+//  Interactables: clock, lamp_hall, lamp_study_desk, desk_chair.  Lights: lamp_hall (Point 2.6 cd), lamp_study_desk
+//  (Spot 3.5 cd); both decay 1.5 so the wall / papers right next to them do not blow out.
+//  Exposes C.hallstudy = { catBed, seat }.
 // =====================================================================================================================
 import * as THREE from 'three';
 
@@ -11408,7 +11438,7 @@ C.register({
       for (const x of [x0 + 0.04, x1 - 0.04]) for (const z of [z0 + 0.04, z1 - 0.04]) U.cyl(S, 0.016, 0.012, 0.66, M.oak, x, 0.33, z, { radial: 8 });
       U.boxAt(S, x0 + 0.04, 0.14, z0 + 0.04, x1 - 0.04, 0.16, z1 - 0.04, M.oak);
       PR.basket({ parent: S, position: [(x0 + x1) / 2, 0.16, 0.8], radius: 0.12, height: 0.12, oval: 0.9, contents: 'none' });
-      PR.lamp({ id: 'lamp_hall', type: 'table', position: [2.24, 0.8, 1.08], height: 0.55, intensity: 4, bodyColor: 0x4f6d9a, room: 'hall', parent: D, label: 'hall lamp' });
+      PR.lamp({ id: 'lamp_hall', type: 'table', position: [2.3, 0.8, 1.08], height: 0.55, intensity: 2.6, decay: 1.5, bodyColor: 0x4f6d9a, room: 'hall', parent: D, label: 'hall lamp' });
       U.lathe(S, [[0, 0], [0.04, 0], [0.085, 0.03], [0.095, 0.05], [0.088, 0.052], [0.075, 0.035], [0, 0.008]], M.blue, 2.26, 0.8, 0.72, { segments: 24 });
       for (const [dx, dz, r] of [[0.01, 0.0, 0.3], [-0.02, 0.02, 1.2]]) U.boxAt(S, 2.26 + dx - 0.004, 0.81, 0.72 + dz - 0.025, 2.26 + dx + 0.004, 0.814, 0.72 + dz + 0.025, M.brass, { ry: r });
       U.box(S, 0.2, 0.004, 0.14, M.paper, 2.26, 0.803, 0.9, { ry: 0.3 });
@@ -11590,7 +11620,7 @@ C.register({
       PR.mug({ parent: S, position: [4.62, top, -4.62], color: 0x4f6d9a, fill: 'none' });
       for (let i = 0; i < 4; i++) U.cyl(S, 0.004, 0.004, 0.17, [M.brass, U.stdMat(0xd9b53a, 0.6), U.stdMat(0x3d6b8c, 0.6), M.dark][i], 4.62 + (i - 1.5) * 0.012, top + 0.1, -4.62 + (i % 2) * 0.01, { rz: (i - 1.5) * 0.08, radial: 6 });
       PR.bookStack({ parent: S, count: 4, position: [3.55, top, -4.6], rotationY: 0.15, seed: 105 });
-      PR.lamp({ id: 'lamp_study_desk', type: 'desk', position: [4.95, top, -4.55], rotationY: -0.15, intensity: 7, room: 'study', parent: D, label: 'desk lamp' });
+      PR.lamp({ id: 'lamp_study_desk', type: 'desk', position: [4.95, top, -4.55], rotationY: -0.15, intensity: 3.5, decay: 1.5, room: 'study', parent: D, label: 'desk lamp' });
       addBox(x0, 0, z0, x1, 0.85, z1 + 0.02, 'desk');
 
       // captain's chair at the desk (sitter faces −Z)
@@ -11750,7 +11780,8 @@ C.register({
 //  East nook by w_loft_e: reading chair + floor lamp, beanbag, floor cushions, low bookshelf, telescope, hanging plant.
 //  Eaves: low bookshelves + trunks behind the eave colliders.  Middle: little writing desk + stool.
 //  Interactables: bed, lamp_loft_bedside, lights_loft_string, lamp_loft_nook, loft_chair.
-//  Lights: lamp_loft_bedside (Point 3 cd), lamp_loft_nook (Point 4 cd), lights_loft_string (2 × Point #ffcf8a 2.2 cd).
+//  Lights: lamp_loft_bedside (Point 2.0 cd, decay 1.5: it stands near the gable wall), lamp_loft_nook (Point 3.2 cd),
+//  lights_loft_string (2 × Point #ffcf8a 1.8 cd).
 //  Exposes C.loft = { catSpots, seats, stringLights: { on, toggle() } }.
 // =====================================================================================================================
 import * as THREE from 'three';
@@ -11758,7 +11789,7 @@ import * as THREE from 'three';
 const C = window.COZY;
 const PI = Math.PI;
 const Y = 3.0;
-const STRING_CD = 2.2;
+const STRING_CD = 1.8;
 
 const st = { ready: false };
 
@@ -11857,8 +11888,8 @@ C.register({
         for (const x of [-6.7, -6.3]) for (const z of [z0 + 0.03, z1 - 0.03]) U.cyl(S, 0.015, 0.012, 0.08, M.dark, x, Y + 0.04, z, { radial: 8 });
         addBox(-6.75, Y, z0 - 0.02, -6.24, Y + 0.6, z1 + 0.02, 'nightstand');
       }
-      PR.lamp({ id: 'lamp_loft_bedside', type: 'table', position: [-6.52, Y + 0.57, 1.28], height: 0.5, intensity: 3, bodyColor: 0xc98f8a, room: 'loft', parent: D, label: 'bedside lamp' });
-      PR.bookStack({ parent: S, count: 2, position: [-6.45, Y + 0.57, 1.12], rotationY: 0.4, seed: 121 });
+      PR.lamp({ id: 'lamp_loft_bedside', type: 'table', position: [-6.4, Y + 0.57, 1.32], height: 0.5, intensity: 2.0, decay: 1.5, bodyColor: 0xc98f8a, room: 'loft', parent: D, label: 'bedside lamp' });
+      PR.bookStack({ parent: S, count: 2, position: [-6.47, Y + 0.57, 1.1], rotationY: 0.4, seed: 121 });
       PR.clock({ parent: S, position: [-6.55, Y + 0.57, -1.32], rotationY: PI / 2 - 0.3, scale: 0.55 });
       PR.mug({ parent: S, position: [-6.4, Y + 0.57, -1.12], color: 0x8fa487, fill: 'cocoa' });
       PR.bookStack({ parent: S, count: 3, position: [-6.5, Y + 0.08, -1.25], rotationY: 0.1, seed: 122 });
@@ -12015,7 +12046,7 @@ C.register({
       P.addCylinder(4.6, -2.75, 0.47, Y, Y + 1.0, { tag: 'furniture', name: 'loft.readingChair' });
       const cp = proxyBox(D, hidden, -0.4, 0, -0.4, 0.4, 0.95, 0.4, 'loft.chair.pick'); cp.position.set(4.6, Y + 0.475, -2.75);
       C.interact.add({ id: 'loft_chair', object: cp, label: 'Sit in the reading chair', onUse: () => C.player.sitAt(st.seats.loft_chair) });
-      PR.lamp({ id: 'lamp_loft_nook', type: 'floor', position: [4.15, Y, -3.3], height: 1.5, intensity: 4, room: 'loft', parent: D, label: 'reading lamp', shadeColor: 0xe8d2a8 });
+      PR.lamp({ id: 'lamp_loft_nook', type: 'floor', position: [4.15, Y, -3.3], height: 1.5, intensity: 3.2, room: 'loft', parent: D, label: 'reading lamp', shadeColor: 0xe8d2a8 });
       P.addCylinder(4.15, -3.3, 0.18, Y, Y + 1.5, { tag: 'furniture', name: 'loft.nookLamp' });
       // little side table + mug + book
       U.cyl(S, 0.18, 0.18, 0.025, M.oak, 4.95, Y + 0.5, -3.35, { radial: 20 });
@@ -12121,7 +12152,7 @@ C.register({
       st.stringLevel += Math.sign(want - st.stringLevel) * Math.min(Math.abs(want - st.stringLevel), dt / 0.2);
     }
     const k = st.stringLevel;
-    for (let i = 0; i < st.bulbMats.length; i++) st.bulbMats[i].emissiveIntensity = k * (1.7 + 0.55 * Math.sin(t * (0.9 + i * 0.37) + i * 2.1));
+    for (let i = 0; i < st.bulbMats.length; i++) st.bulbMats[i].emissiveIntensity = k * (0.8 + 0.3 * Math.sin(t * (0.9 + i * 0.37) + i * 2.1));
     for (let i = 0; i < st.stringLights.length; i++) st.stringLights[i].intensity = STRING_CD * k * (0.94 + 0.06 * Math.sin(t * 1.1 + i));
   },
 });
@@ -12914,7 +12945,7 @@ const C = window.COZY;
 // ---------------------------------------------------------------------------------------------------------------------
 // Tunables
 // ---------------------------------------------------------------------------------------------------------------------
-const BLOOM = { strength: 0.42, radius: 0.55, threshold: 1.05 };
+const BLOOM = { strength: 0.3, radius: 0.5, threshold: 1.2 };      // softened after playtesting (lamps glared)
 const BLOOM_MAX_PIXELS = 1920 * 1080;        // bloom input is capped to this (mip0 = half of it) for hi-dpi screens
 const GRADE = { split: 0.55, vignette: 0.26, grain: 0.010 };
 

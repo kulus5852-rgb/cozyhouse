@@ -6,7 +6,7 @@
 //  Tea ritual: "Put the kettle on" → boil → whistle → "Make a cup of tea" → steaming mug in hand;
 //  Q / left click sips, E (nothing focused) sets it down on the surface under the crosshair.
 //  Interactables: kettle, lamp_dining_pendant, lamp_kitchen, dining_chair.
-//  Lights: lamp_dining_pendant (Point #ffc27a 6.5 cd), lamp_kitchen (Point #ffd29a 4 cd).
+//  Lights: lamp_dining_pendant (Point #ffc27a 5.2 cd), lamp_kitchen (Point #ffd29a 3.2 cd).
 // =====================================================================================================================
 import * as THREE from 'three';
 
@@ -420,8 +420,8 @@ C.register({
       const cp = proxyBox(D, hidden, -0.23, 0, -0.23, 0.23, 0.95, 0.23, 'kitchen.diningChair.pick');
       cp.position.set(cx + 0.4, 0.475, cz + 0.8); cp.rotation.y = PI + 0.04;
       C.interact.add({ id: 'dining_chair', object: cp, label: 'Sit at the table', onUse: () => C.player.sitAt(st.seat) });
-      PR.lamp({ id: 'lamp_dining_pendant', type: 'pendant', style: 'dome', position: [cx, 2.8, cz], height: 1.02, intensity: 6.5, color: 0xffc27a, room: 'kitchen', parent: D, label: 'pendant lamp' });
-      PR.lamp({ id: 'lamp_kitchen', type: 'pendant', style: 'glass', position: [-1.9, 2.8, -3.55], height: 0.68, intensity: 4, color: 0xffd29a, room: 'kitchen', parent: D, label: 'kitchen light' });
+      PR.lamp({ id: 'lamp_dining_pendant', type: 'pendant', style: 'dome', position: [cx, 2.8, cz], height: 1.02, intensity: 5.2, color: 0xffc27a, room: 'kitchen', parent: D, label: 'pendant lamp' });
+      PR.lamp({ id: 'lamp_kitchen', type: 'pendant', style: 'glass', position: [-1.9, 2.8, -3.55], height: 0.68, intensity: 3.2, color: 0xffd29a, room: 'kitchen', parent: D, label: 'kitchen light' });
       PR.plant({ parent: S, type: 'monstera', position: [-6.2, 0, -0.35], scale: 0.9, seed: 92 });
       P.addCylinder(-6.2, -0.35, 0.22, 0, 1.0, { tag: 'furniture', name: 'kitchen.monstera' });
       PR.painting({ parent: S, width: 0.55, height: 0.42, style: 'cottage', frame: 'wood', position: [-6.75, 1.6, -0.4], rotationY: PI / 2, seed: 93 });

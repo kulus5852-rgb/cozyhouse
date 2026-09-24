@@ -6,8 +6,9 @@
 //  Study: desk under w_study_n (typewriter, open journal, ink, papers, banker's lamp), captain's desk chair,
 //  floor-to-ceiling bookshelves on P1, leather reading chair by the east window, globe, map chest, framed maps,
 //  kilim rug, plants, cat bed.
-//  Interactables: clock, lamp_hall, lamp_study_desk, desk_chair.  Lights: lamp_hall (Point 4 cd), lamp_study_desk
-//  (Spot 7 cd).  Exposes C.hallstudy = { catBed, seat }.
+//  Interactables: clock, lamp_hall, lamp_study_desk, desk_chair.  Lights: lamp_hall (Point 2.6 cd), lamp_study_desk
+//  (Spot 3.5 cd); both decay 1.5 so the wall / papers right next to them do not blow out.
+//  Exposes C.hallstudy = { catBed, seat }.
 // =====================================================================================================================
 import * as THREE from 'three';
 
@@ -177,7 +178,7 @@ C.register({
       for (const x of [x0 + 0.04, x1 - 0.04]) for (const z of [z0 + 0.04, z1 - 0.04]) U.cyl(S, 0.016, 0.012, 0.66, M.oak, x, 0.33, z, { radial: 8 });
       U.boxAt(S, x0 + 0.04, 0.14, z0 + 0.04, x1 - 0.04, 0.16, z1 - 0.04, M.oak);
       PR.basket({ parent: S, position: [(x0 + x1) / 2, 0.16, 0.8], radius: 0.12, height: 0.12, oval: 0.9, contents: 'none' });
-      PR.lamp({ id: 'lamp_hall', type: 'table', position: [2.24, 0.8, 1.08], height: 0.55, intensity: 4, bodyColor: 0x4f6d9a, room: 'hall', parent: D, label: 'hall lamp' });
+      PR.lamp({ id: 'lamp_hall', type: 'table', position: [2.3, 0.8, 1.08], height: 0.55, intensity: 2.6, decay: 1.5, bodyColor: 0x4f6d9a, room: 'hall', parent: D, label: 'hall lamp' });
       U.lathe(S, [[0, 0], [0.04, 0], [0.085, 0.03], [0.095, 0.05], [0.088, 0.052], [0.075, 0.035], [0, 0.008]], M.blue, 2.26, 0.8, 0.72, { segments: 24 });
       for (const [dx, dz, r] of [[0.01, 0.0, 0.3], [-0.02, 0.02, 1.2]]) U.boxAt(S, 2.26 + dx - 0.004, 0.81, 0.72 + dz - 0.025, 2.26 + dx + 0.004, 0.814, 0.72 + dz + 0.025, M.brass, { ry: r });
       U.box(S, 0.2, 0.004, 0.14, M.paper, 2.26, 0.803, 0.9, { ry: 0.3 });
@@ -359,7 +360,7 @@ C.register({
       PR.mug({ parent: S, position: [4.62, top, -4.62], color: 0x4f6d9a, fill: 'none' });
       for (let i = 0; i < 4; i++) U.cyl(S, 0.004, 0.004, 0.17, [M.brass, U.stdMat(0xd9b53a, 0.6), U.stdMat(0x3d6b8c, 0.6), M.dark][i], 4.62 + (i - 1.5) * 0.012, top + 0.1, -4.62 + (i % 2) * 0.01, { rz: (i - 1.5) * 0.08, radial: 6 });
       PR.bookStack({ parent: S, count: 4, position: [3.55, top, -4.6], rotationY: 0.15, seed: 105 });
-      PR.lamp({ id: 'lamp_study_desk', type: 'desk', position: [4.95, top, -4.55], rotationY: -0.15, intensity: 7, room: 'study', parent: D, label: 'desk lamp' });
+      PR.lamp({ id: 'lamp_study_desk', type: 'desk', position: [4.95, top, -4.55], rotationY: -0.15, intensity: 3.5, decay: 1.5, room: 'study', parent: D, label: 'desk lamp' });
       addBox(x0, 0, z0, x1, 0.85, z1 + 0.02, 'desk');
 
       // captain's chair at the desk (sitter faces −Z)

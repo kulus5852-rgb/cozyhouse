@@ -449,8 +449,12 @@ add/remove lights at runtime → no shader recompiles). Only the fire light cast
 These intensities are starting points; tune them by screenshots so interiors read **warm and lamp‑lit but not blown
 out**, corners fall off into soft darkness, and the outside reads **cool blue‑grey**. Emissive lamp shades / bulbs +
 `C.util.glowSprite` halos sell the glow (bloom picks them up).
-Tuned after playtesting ("too bright"): fire 11, living floor 4.5 / table 3, dining pendant 6.5, kitchen 4, hall 4,
-study desk 7, bedside 3, loft nook 4, string lights 2 × 2.2 cd; indoor sky fill `INDOOR_HEMI` 0.08 (weather.js).
+Tuned after playtesting ("too bright"): fire 9, living floor 3.6 / table 2.4, dining pendant 5.2 (down-facing spot:
+dome pendants no longer light the ceiling), kitchen 3.2, hall 2.6, study desk 3.5, bedside 2.0, loft nook 3.2, string
+lights 2 × 1.8 cd; hall, desk and bedside lamps use decay 1.5 (they sit right next to walls / papers); indoor sky fill
+`INDOOR_HEMI` 0.08 (weather.js).
+Item glow is tuned separately: `GLOW` in props.js scales lamp emissives/halos; shade interiors are unlit colours;
+bloom strength 0.3, threshold 1.2 (post.js).
 
 ## 6. Art direction & palette
 Mood: hygge, late‑afternoon/dusk rain, warm pools of lamp light, dark wood, soft textiles, clutter that tells a story.
