@@ -12,10 +12,7 @@
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 import path from 'path';
-
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
-const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
+import { ROOT, CHROME, GPU_ARGS, pageUrl } from './chrome.mjs';
 
 const argv = process.argv.slice(2);
 function arg(name, def) {
@@ -67,8 +64,8 @@ if (noshots) views = [];
 if (!fs.existsSync(htmlPath)) { console.error(`[shot] no such file ${htmlPath}`); process.exit(2); }
 fs.mkdirSync(outdir, { recursive: true });
 
-const url = 'file:///' + htmlPath.replace(/\\/g, '/') + '?debug=1&autostart=1&lightning=0&seed=7' +
-  (colliders ? '&colliders=1' : '') + (params ? '&' + params.replace(/^[?&]/, '') : '');
+const url = pageUrl(htmlPath, 'debug=1&autostart=1&lightning=0&seed=7' +
+  (colliders ? '&colliders=1' : '') + (params ? '&' + params.replace(/^[?&]/, '') : ''));
 
 const report = { url, views: [], consoleErrors: [], consoleWarnings: [], pageErrors: [], requestFailures: [], ready: false };
 const errCount = new Map(), warnCount = new Map();
@@ -76,7 +73,7 @@ const errCount = new Map(), warnCount = new Map();
 const browser = await puppeteer.launch({
   executablePath: CHROME, headless: true,
   args: ['--headless=new', '--no-first-run', '--allow-file-access-from-files', '--autoplay-policy=no-user-gesture-required',
-    '--enable-gpu', '--ignore-gpu-blocklist', `--window-size=${W},${H}`],
+    ...GPU_ARGS, `--window-size=${W},${H}`],
   defaultViewport: { width: W, height: H, deviceScaleFactor: 1 },
 });
 try {

@@ -14,7 +14,7 @@ const C = window.COZY;
 // ---------------------------------------------------------------------------------------------------------------------
 // Tunables
 // ---------------------------------------------------------------------------------------------------------------------
-const BLOOM = { strength: 0.42, radius: 0.55, threshold: 1.05 };
+const BLOOM = { strength: 0.3, radius: 0.5, threshold: 1.2 };      // softened after playtesting (lamps glared)
 const BLOOM_MAX_PIXELS = 1920 * 1080;        // bloom input is capped to this (mip0 = half of it) for hi-dpi screens
 const GRADE = { split: 0.55, vignette: 0.26, grain: 0.010 };
 

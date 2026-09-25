@@ -40,6 +40,9 @@ D:/cozyses/
   Night: `--params "time=night"`. Run JS first: `--eval "COZY.debug.interact('lamp_living_floor')"`.
   Collider wireframes: `--colliders`. The report lists page errors, console errors, module errors, draw calls.
 * Paths: use `D:/cozyses/...` or `/d/cozyses/...` (Git Bash on Windows). Node 22 is installed.
+* Other OSes: `tools/chrome.mjs` locates the browser (`CHROME_PATH`, the Windows installs, or Chrome for Testing in
+  `~/.cache/cozy-chrome`). Without a GPU it runs WebGL on SwiftShader; keep shots small (`--w 640 --h 360`) and pass
+  `--timeout` to `walktest.mjs` / `shot.mjs` when boot is slow.
 
 ### Imports
 Only three.js r170 via the importmap:
@@ -218,7 +221,7 @@ position, room) when `?debug=1` or F3. Warm, minimal, serif typography, soft sha
 
 ### 3.9 Settings
 `C.settings = { masterVolume: 0.8, musicVolume: 0.7, ambienceVolume: 0.9, sfxVolume: 0.8, mouseSensitivity: 1.0,
-invertY: false, fov: 70, quality: 'high' ('low'|'medium'|'high'), headBob: true, showFps: false }`,
+invertY: false, fov: 70, quality: 'high' ('low'|'medium'|'high'), headBob: false, showFps: false }`,
 persisted in localStorage `cozy-settings-v1`. `C.setSetting(key, value)` → emits `'settings'`.
 URL overrides `?quality=low`, `?mute=1`.
 Quality meaning: low = pixelRatio ≤ 1, no shadows, no bloom, rain 40%; medium = pixelRatio ≤ 1.25, no shadows,
@@ -446,6 +449,12 @@ add/remove lights at runtime → no shader recompiles). Only the fire light cast
 These intensities are starting points; tune them by screenshots so interiors read **warm and lamp‑lit but not blown
 out**, corners fall off into soft darkness, and the outside reads **cool blue‑grey**. Emissive lamp shades / bulbs +
 `C.util.glowSprite` halos sell the glow (bloom picks them up).
+Tuned after playtesting ("too bright"): fire 9, living floor 3.6 / table 2.4, dining pendant 5.2 (down-facing spot:
+dome pendants no longer light the ceiling), kitchen 3.2, hall 2.6, study desk 3.5, bedside 2.0, loft nook 3.2, string
+lights 2 × 1.8 cd; hall, desk and bedside lamps use decay 1.5 (they sit right next to walls / papers); indoor sky fill
+`INDOOR_HEMI` 0.08 (weather.js).
+Item glow is tuned separately: `GLOW` in props.js scales lamp emissives/halos; shade interiors are unlit colours;
+bloom strength 0.3, threshold 1.2 (post.js).
 
 ## 6. Art direction & palette
 Mood: hygge, late‑afternoon/dusk rain, warm pools of lamp light, dark wood, soft textiles, clutter that tells a story.
@@ -498,7 +507,8 @@ events emitted/consumed, known issues.
   glassPanes: [...], roofY(x, z) }`. **Write a first functional version fast** (floors, walls, colliders, stairs) so
   other modules can test in context, then refine.
 * **player** (`src/player.js`, order 10): FPS controller on top of core physics: smoothed accel, walk 2.0 m/s, run 3.8,
-  crouch 1.1, jump, gravity, ground snapping on stairs/ramps (step down ≤ 0.4 when grounded), head bob (setting),
+  crouch 1.1, jump, gravity, ground snapping on stairs/ramps (step down ≤ 0.4 when grounded), optional subtle vertical
+  head bob (setting, off by default; no idle sway),
   footstep events every ~0.62 m (surface from physics), land events, sitting/lying transitions (camera ease, look
   limits), flashlight (F, SpotLight parented to camera), touch controls (left virtual joystick, right‑side drag to
   look, on‑screen Use/Jump buttons) when `C.input.isTouch`, `C.debug.simulate`, noclip for freecam/debug (fly with

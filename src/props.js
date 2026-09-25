@@ -271,10 +271,13 @@ const LAMP_DEF = {
   pendant: { intensity: 24, noun: 'pendant lamp' }, ceiling: { intensity: 14, noun: 'ceiling light' }, wall: { intensity: 9, noun: 'wall lamp' },
   lantern: { intensity: 10, noun: 'lantern' },
 };
+// Glow tuning (playtest: lamps read white-hot). Emissive glows scale by `emissive`, halo sprites by `halo` (opacity)
+// and `haloSize`. Shade interiors use unlit colours (innerGlow): the lamp's own light a few cm away blows them out.
+const GLOW = { emissive: 0.4, halo: 0.35, haloSize: 0.7 };
 
 function makeShadeMat(o, lampColor, maxEmissive = 1.1) {
   const m = M('lampshade').clone();
-  m.side = THREE.DoubleSide;
+  m.side = THREE.FrontSide;                     // outer face; the inside is drawn by shadeInner()
   if (o.shadeColor !== undefined) m.color.set(o.shadeColor).multiplyScalar(1.05);
   m.emissive = lampColor.clone();
   if (o.shadeColor !== undefined) m.emissive.lerp(new THREE.Color(o.shadeColor), 0.35);
@@ -287,6 +290,19 @@ function makeBulbMat(max = 3.2) {
   const m = M('bulb').clone();
   m.emissiveIntensity = 0;
   return { m, max };
+}
+// unlit surface whose colour fades off → on with the lamp (applyLamp), so it never blows out
+function innerGlow(on, off, opts = {}) {
+  const m = new THREE.MeshBasicMaterial({ color: off.clone(), side: opts.side !== undefined ? opts.side : THREE.BackSide,
+    transparent: !!opts.transparent, opacity: opts.opacity !== undefined ? opts.opacity : 1, depthWrite: !opts.transparent });
+  m.name = 'props.innerGlow';
+  return { m, on, off };
+}
+function shadeInner(parent, geo, o, id, lampColor, glows) {
+  const on = lampColor.clone().lerp(new THREE.Color(o.shadeColor !== undefined ? o.shadeColor : 0xefe0c0), 0.3).multiplyScalar(0.6);
+  const g = innerGlow(on, new THREE.Color(0x1d1a17));
+  glows.push(g);
+  meshesFrom([{ geo: prep(geo, false), mat: g.m }], parent, 'props.lamp.' + id + '.shadeIn', { dynamic: true });
 }
 
 function lamp(o = {}) {
@@ -301,9 +317,10 @@ function lamp(o = {}) {
   const lampColor = new THREE.Color(o.color !== undefined ? o.color : 0xffb46b);
   const mk = metal(o.metal || (type === 'lantern' ? 'iron' : 'brass'));
   const parts = new Parts();
-  const glows = [];           // { m, max } emissive materials that fade with the lamp
+  const glows = [];           // materials that fade with the lamp: { m, max } emissive, or { m, on, off } unlit colour
   let lightPos = [0, 0, 0], spriteSize = 0.6, spriteOpacity = 0.55, spritePos = null;
   let spotTarget = null;
+  let spotAngle = 1.0, spotPenumbra = 0.65;
 
   if (type === 'floor') {
     const H = o.height || 1.6;
@@ -338,6 +355,7 @@ function lamp(o = {}) {
     parts.add(gCyl(0.013, 0.017, 0.03, 12, 0, bY - 0.035, 0), bulb.m);
     parts.build(inner, 'props.lamp.' + id + '.body', { dynamic: true });
     meshesFrom([{ geo: prep(shade, false), mat: sh.m }], inner, 'props.lamp.' + id + '.shade', { dynamic: true });
+    shadeInner(inner, shade, o, id, lampColor, glows);
     lightPos = [0, bY, 0]; spriteSize = 0.95; spriteOpacity = 0.5;
   } else if (type === 'table') {
     const H = o.height || 0.6, k = H / 0.6;
@@ -364,6 +382,7 @@ function lamp(o = {}) {
     parts.add(gSph(0.026, 0, bY, 0, 1, 1.18, 1), bulb.m);
     parts.build(inner, 'props.lamp.' + id + '.body', { dynamic: true });
     meshesFrom([{ geo: prep(shade, false), mat: sh.m }], inner, 'props.lamp.' + id + '.shade', { dynamic: true });
+    shadeInner(inner, shade, o, id, lampColor, glows);
     lightPos = [0, bY, 0]; spriteSize = 0.6; spriteOpacity = 0.5;
   } else if (type === 'desk') {
     const H = o.height || 0.42;
@@ -378,9 +397,9 @@ function lamp(o = {}) {
     gm.emissive = new THREE.Color(glassCol).lerp(lampColor, 0.2); gm.emissiveIntensity = 0;
     gm.name = 'props.bankerglass.' + id;
     glows.push({ m: gm, max: 0.25 });
-    const opal = C.util.stdMat(0xf6efe0, 0.35, 0).clone();
-    opal.side = THREE.BackSide; opal.emissive = lampColor.clone(); opal.emissiveIntensity = 0; opal.name = 'props.bankeropal.' + id;
-    glows.push({ m: opal, max: 0.8 });
+    const opalGlow = innerGlow(lampColor.clone().lerp(new THREE.Color(0xffffff), 0.3).multiplyScalar(0.55), new THREE.Color(0x2c2a26));
+    const opal = opalGlow.m; opal.name = 'props.bankeropal.' + id;
+    glows.push(opalGlow);
     const sy = H - 0.03, len = 0.27, R = 0.07;
     const shadeG = new THREE.CylinderGeometry(R, R, len, 24, 1, true, 0, Math.PI);
     // axis along X, opening facing down
@@ -422,12 +441,14 @@ function lamp(o = {}) {
       parts.add(gBox(0.46, 0.003, 0.003, 0, sb + 0.235, 0), mk); parts.add(gBox(0.003, 0.003, 0.46, 0, sb + 0.235, 0), mk);
       parts.add(gSph(0.032, 0, sb + 0.11, 0, 1, 1.15, 1), bulb.m);
       meshesFrom([{ geo: prep(shade, false), mat: sh.m }], inner, 'props.lamp.' + id + '.shade', { dynamic: true });
+      shadeInner(inner, shade, o, id, lampColor, glows);
       lightPos = [0, sb + 0.1, 0]; spriteSize = 1.0; spriteOpacity = 0.45;
     } else if (style === 'glass') {
       const gc = o.shadeColor !== undefined ? o.shadeColor : 0xd9a55a;
-      const gm = new THREE.MeshStandardMaterial({ color: gc, roughness: 0.2, metalness: 0, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide, emissive: new THREE.Color(gc).lerp(lampColor, 0.5), emissiveIntensity: 0 });
-      gm.name = 'props.pendantglass.' + id;
-      glows.push({ m: gm, max: 1.2 });
+      const gcol = new THREE.Color(gc);
+      const glass = innerGlow(gcol.clone().lerp(lampColor, 0.5).multiplyScalar(0.75), gcol.clone().multiplyScalar(0.3), { side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+      const gm = glass.m; gm.name = 'props.pendantglass.' + id;
+      glows.push(glass);
       const sb = -drop;
       const prof = []; for (let i = 0; i <= 10; i++) { const t = i / 10; prof.push([0.03 + 0.13 * Math.pow(Math.sin(t * Math.PI * 0.5), 0.8) * (1 - 0.1 * t), sb + 0.19 * (1 - t)]); }
       prof.reverse();
@@ -446,9 +467,9 @@ function lamp(o = {}) {
       }
       const outerCol = o.shadeColor !== undefined ? o.shadeColor : 0x3d5a47;
       const outerM = C.util.stdMat(outerCol, 0.3, 0.05);
-      const inM = C.util.stdMat(0xf4efe4, 0.4, 0).clone();
-      inM.side = THREE.BackSide; inM.emissive = lampColor.clone(); inM.emissiveIntensity = 0; inM.name = 'props.enamelIn.' + id;
-      glows.push({ m: inM, max: 0.55 });
+      const enamel = innerGlow(lampColor.clone().lerp(new THREE.Color(0xffffff), 0.35).multiplyScalar(0.6), new THREE.Color(0x3b3833));
+      const inM = enamel.m; inM.name = 'props.enamelIn.' + id;
+      glows.push(enamel);
       parts.add(gLathe(prof, 36), outerM);
       // rolled rim
       parts.add(gTorus(0.2, 0.006, 6, 48, TAU, 0, sb + 0.012, 0, Math.PI / 2), outerM);
@@ -456,6 +477,8 @@ function lamp(o = {}) {
       meshesFrom([{ geo: prep(innerG, false), mat: inM }], inner, 'props.lamp.' + id + '.shadeIn', { dynamic: true });
       parts.add(gSph(0.034, 0, sb + 0.085, 0, 1, 1.12, 1), bulb.m);
       lightPos = [0, sb + 0.08, 0]; spriteSize = 0.8; spriteOpacity = 0.55; spritePos = [0, sb + 0.04, 0];
+      // opaque metal dome: light only leaves downwards (a point light would light the ceiling through it)
+      spotTarget = [0, sb - 1.5, 0]; spotAngle = 1.2; spotPenumbra = 0.75;
     }
     parts.build(inner, 'props.lamp.' + id + '.body', { dynamic: true });
   } else if (type === 'ceiling') {
@@ -488,6 +511,7 @@ function lamp(o = {}) {
     parts.add(gTorus(0.0525, 0.0025, 4, 28, TAU, 0, st, cz, Math.PI / 2), trimM);
     parts.build(inner, 'props.lamp.' + id + '.body', { dynamic: true });
     meshesFrom([{ geo: prep(shade, false), mat: sh.m }], inner, 'props.lamp.' + id + '.shade', { dynamic: true });
+    shadeInner(inner, shade, o, id, lampColor, glows);
     lightPos = [0, bY, cz + 0.02]; spriteSize = 0.55; spriteOpacity = 0.5;
   } else if (type === 'lantern') {
     const mount = o.mount || o.style || 'wall';
@@ -512,9 +536,9 @@ function lamp(o = {}) {
     parts.add(gCyl(0.02, 0.028, 0.03, 12, cx, topY + 0.12, cz), mk);
     parts.add(gSph(0.012, cx, topY + 0.145, cz), mk);
     if (mount === 'stand' || mount === 'hang') parts.add(gTorus(0.035, 0.005, 5, 18, Math.PI, cx, topY + 0.15, cz), mk);
-    const gm = new THREE.MeshStandardMaterial({ color: 0xf4e2c0, roughness: 0.15, metalness: 0, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, emissive: lampColor.clone(), emissiveIntensity: 0 });
-    gm.name = 'props.lanternglass.' + id;
-    glows.push({ m: gm, max: 0.7 });
+    const lglass = innerGlow(lampColor.clone().lerp(new THREE.Color(0xf4e2c0), 0.4).multiplyScalar(0.7), new THREE.Color(0xf4e2c0).multiplyScalar(0.12), { side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+    const gm = lglass.m; gm.name = 'props.lanternglass.' + id;
+    glows.push(lglass);
     const pan = new Parts();
     for (let k = 0; k < 4; k++) {
       const a = k * Math.PI / 2;
@@ -531,8 +555,8 @@ function lamp(o = {}) {
   // light
   const intensity = o.intensity !== undefined ? o.intensity : def.intensity;
   let light;
-  if (type === 'desk') {
-    light = new THREE.SpotLight(lampColor, 0, o.distance || 0, o.angle || 1.0, o.penumbra !== undefined ? o.penumbra : 0.65, o.decay !== undefined ? o.decay : 2);
+  if (spotTarget) {
+    light = new THREE.SpotLight(lampColor, 0, o.distance || 0, o.angle || spotAngle, o.penumbra !== undefined ? o.penumbra : spotPenumbra, o.decay !== undefined ? o.decay : 2);
     const tgt = new THREE.Object3D(); tgt.name = 'props.lamp.' + id + '.target';
     tgt.position.set(spotTarget[0], spotTarget[1], spotTarget[2]);
     inner.add(tgt);
@@ -554,7 +578,7 @@ function lamp(o = {}) {
 
   // halo
   const gm = o.glow !== undefined ? o.glow : 1;
-  const sprite = C.util.glowSprite(lampColor.getHex(), spriteSize * gm, 0);
+  const sprite = C.util.glowSprite(lampColor.getHex(), spriteSize * gm * GLOW.haloSize, 0);
   const sp = spritePos || lightPos;
   sprite.position.set(sp[0], sp[1], sp[2]);
   sprite.raycast = () => {};
@@ -562,7 +586,7 @@ function lamp(o = {}) {
   inner.add(sprite);
 
   const L = {
-    id, type, group: g, light, intensity, glows, sprite, spriteOpacity: spriteOpacity * Math.min(1, gm),
+    id, type, group: g, light, intensity, glows, sprite, spriteOpacity: spriteOpacity * Math.min(1, gm) * GLOW.halo,
     level: 0, target: 0, interactable: null,
     get on() { return this.target > 0.5; },
     setOn(v, instant) {
@@ -594,7 +618,11 @@ function lamp(o = {}) {
 function applyLamp(L) {
   const k = smooth(clamp(L.level, 0, 1));
   L.light.intensity = L.intensity * k;
-  for (let i = 0; i < L.glows.length; i++) L.glows[i].m.emissiveIntensity = L.glows[i].max * k;
+  for (let i = 0; i < L.glows.length; i++) {
+    const gl = L.glows[i];
+    if (gl.on) gl.m.color.copy(gl.off).lerp(gl.on, k);
+    else gl.m.emissiveIntensity = gl.max * k * GLOW.emissive;
+  }
   L.sprite.material.opacity = L.spriteOpacity * k;
   L.sprite.visible = k > 0.002;
 }
@@ -615,7 +643,7 @@ function flameGeo() {
 }
 function flameMat() {
   if (_flameMat) return _flameMat;
-  _flameMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.6, 0.22).multiplyScalar(2.4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  _flameMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.6, 0.22).multiplyScalar(1.4), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
   _flameMat.name = 'props.flame';
   return _flameMat;
 }
@@ -626,11 +654,11 @@ function addFlame(parent, x, y, z, size = 1, lit = true) {
   f.userData.dynamic = true;
   f.name = 'props.flame';
   f.raycast = () => {};
-  const halo = C.util.glowSprite(0xffa048, 0.2 * size, 0.55);
+  const halo = C.util.glowSprite(0xffa048, 0.14 * size, 0.22);
   halo.position.set(x, y + 0.02 * size, z);
   halo.raycast = () => {};
   parent.add(f); parent.add(halo);
-  const c = { flame: f, halo, base: size, ph: Math.random() * 100, lit, haloOp: 0.55 };
+  const c = { flame: f, halo, base: size, ph: Math.random() * 100, lit, haloOp: 0.22 };
   f.visible = halo.visible = lit;
   S.candles.push(c);
   return c;

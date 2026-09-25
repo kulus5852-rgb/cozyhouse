@@ -35,7 +35,7 @@ function interp(bp, u) {                                           // piecewise-
 // Level table (linear gains, calibrated with tools/audiocap.mjs captures and build/audio_test.js).
 const LV = {
   wash: 0.38, light: 0.34, ticks: 0.38, low: 0.42, inside: 0.3, leak: 0.45,                    // open sky / through walls
-  window: 0.24, sky: 0.46, roof: 0.36, porch: 0.37, gutter: 0.42, drip: 0.32, pond: 0.38, leaves: 0.28, canopy: 0.24, drop: 0.18,
+  window: 0.24, sky: 0.18, roof: 0.14, porch: 0.37, gutter: 0.42, drip: 0.32, pond: 0.38, leaves: 0.28, canopy: 0.24, drop: 0.18,
   wind: 0.36, moan: 0.5, whistle: 0.05, rustle: 0.34, pines: 0.3, creak: 0.26,                  // wind
   fireBed: 0.35, fireCrackle: 0.2, fireHiss: 0.24, crk: 0.3, pop: 0.26, settle: 0.34, clock: 0.36,
   thunder: 0.95, rattle: 0.3,
@@ -1692,14 +1692,16 @@ function startAmbience() {
     });
     layers.sky = SKYLIGHTS.map(([x, z], i) => {                 // skylights take the rain head-on
       const em = makeEmitter({ x, y: 7.45 - 0.7 * Math.abs(z), z, group: 'rain', model: 'equalpower', ref: 1.2, rolloff: 1.3, rev: 0.35 });
-      return loopSource(i % 2 ? 'glassA' : 'glassB', em.input, 0, 0.2 + i * 0.29, 1.05 + i * 0.04);
+      const lp = filt('lowpass', 3500, 0.6); lp.connect(em.input);          // playtest: soft taps on the glass, not bright ticks
+      return loopSource(i % 2 ? 'glassA' : 'glassB', lp, 0, 0.2 + i * 0.29, 1.05 + i * 0.04);
     });
   });
   whenBuf('roof', () => {                      // both slate slopes as plane sources: loudest where the ceiling comes down low
     layers.roof = [1, -1].map((sg, i) => {
       const em = makeEmitter({ group: 'rain', model: 'equalpower', ref: 1.0, rolloff: 0.9, rev: 0.35 });
       lineSource(em, pt => { const zs = clamp((sg * L.z - 0.7 * (L.y - 7.5)) / 1.49, 0.15, 4.75); pt[0] = clamp(L.x, -6.75, 6.75); pt[1] = 7.5 - 0.7 * zs; pt[2] = sg * zs; });
-      return loopSource('roof', em.input, 0, i * 0.5, 1 + i * 0.04);
+      const lp = filt('lowpass', 1100, 0.6); lp.connect(em.input);          // playtest: boards + insulation muffle the slates
+      return loopSource('roof', lp, 0, i * 0.5, 1 + i * 0.04);
     });
   });
   whenBuf('porch', () => {                     // porch roof drumming: overhead on the porch, from its direction elsewhere
@@ -1770,7 +1772,8 @@ function checkPresence() {
   if (ck && !layers.clock && !layers.clockWait) {
     layers.clockWait = true;
     const pos = [2.35, 1.2, -0.3];
-    if (ck.object && worldPos(ck.object, pos)) pos[1] = Math.max(0, pos[1]) + 1.25;       // the movement sits up in the hood
+    // floor-origin objects: lift to the hood; pick-proxies are already centred on the case
+    if (ck.object && worldPos(ck.object, pos)) pos[1] = clamp(pos[1] < 0.5 ? pos[1] + 1.6 : pos[1], 1.1, 2.0);
     whenBuf('clock', () => {
       const em = makeEmitter({ x: pos[0], y: pos[1], z: pos[2], group: 'clock', ref: 0.9, rolloff: 1.2, rev: 1.2 });
       layers.clock = loopSource('clock', em.input, 0, 0);

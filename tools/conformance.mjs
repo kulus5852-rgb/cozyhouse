@@ -3,17 +3,15 @@
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 import path from 'path';
+import { ROOT, CHROME, GPU_ARGS, pageUrl } from './chrome.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
-const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
 const argv = process.argv.slice(2);
 function arg(name, def) { const i = argv.indexOf('--' + name); if (i < 0) return def; const v = argv[i + 1]; return (v === undefined || v.startsWith('--')) ? true : v; }
 const htmlPath = path.resolve(ROOT, arg('html', 'cozy-house.html'));
-const url = 'file:///' + htmlPath.replace(/\\/g, '/') + '?debug=1&autostart=1&lightning=0&seed=7';
+const url = pageUrl(htmlPath, 'debug=1&autostart=1&lightning=0&seed=7');
 
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true,
-  args: ['--headless=new', '--no-first-run', '--allow-file-access-from-files', '--enable-gpu', '--ignore-gpu-blocklist'],
+  args: ['--headless=new', '--no-first-run', '--allow-file-access-from-files', ...GPU_ARGS],
   defaultViewport: { width: 800, height: 450 } });
 const page = await browser.newPage();
 const pageErrors = [];
