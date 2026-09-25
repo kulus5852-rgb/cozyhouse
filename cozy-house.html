@@ -8404,7 +8404,13 @@ function tick(dt, t, C) {
 //
 //  Graph:  sources → [emitter: occlusion LP → gain → Panner] → group gain → bus (music/ambience/sfx, settings volume)
 //          → master (masterVolume) → pause duck → duck LP → glue compressor → limiter → soft clipper → mute → out
-//          sfx + music buses also feed a small synthetic room reverb (wet level follows indoor-ness).
+//  Acoustics: every emitter also sends (pre-distance, post-occlusion) into the reverb of the space it is in — a
+//          furnished-cottage room response indoors, an open-air response outside — so distant sounds get more
+//          reverberant (direct/reverberant ratio is the main distance cue). Each reverb return is muffled when the
+//          listener is on the other side of the walls. Non-positional sfx (own footsteps) use the listener's space.
+//  Rain is built from located sources: every window pane, both roof slopes (loft), the skylights, the porch roof,
+//          the eave drip lines, downspouts, the pond and the trees, over open-sky beds that crossfade drizzle→storm.
+//          Runoff (gutters, drips) lags the rain; wind gusts travel across the garden and lash the windward panes.
 // =====================================================================================================================
 const C = window.COZY;
 
@@ -8425,18 +8431,24 @@ function interp(bp, u) {                                           // piecewise-
   return bp[bp.length - 1][1];
 }
 
-// Level table (calibrated with build/audio_test.js — see final report). All values are linear gains.
-// roof / glass: lowered and low-passed after playtesting — the loft was far louder than downstairs.
+// Level table (linear gains, calibrated with tools/audiocap.mjs captures and build/audio_test.js).
 const LV = {
-  wash: 0.42, ticks: 0.5, low: 0.45, inside: 0.3, roof: 0.14, porch: 0.5, leak: 0.55, glass: 0.2, gutter: 0.6,
-  drop: 0.2, wind: 0.6, whistle: 0.08, fireBed: 0.35, fireCrackle: 0.5, pop: 0.2, clock: 0.38, thunder: 0.95,
+  wash: 0.38, light: 0.34, ticks: 0.38, low: 0.42, inside: 0.3, leak: 0.45,                    // open sky / through walls
+  window: 0.24, sky: 0.18, roof: 0.14, porch: 0.37, gutter: 0.42, drip: 0.32, pond: 0.38, leaves: 0.28, canopy: 0.24, drop: 0.18,
+  wind: 0.36, moan: 0.5, whistle: 0.05, rustle: 0.34, pines: 0.3, creak: 0.26,                  // wind
+  fireBed: 0.35, fireCrackle: 0.2, fireHiss: 0.24, crk: 0.3, pop: 0.26, settle: 0.34, clock: 0.36,
+  thunder: 0.95, rattle: 0.3,
+  revIn: 0.5, revOut: 0.34,                                                                     // reverb returns (unit-energy IRs)
   piano: 0.14, bass: 0.28, drums: 0.17, vinyl: 0.25, loop: 0.5, kettle: 0.45, whistleK: 0.022, purr: 0.3,
 };
-const STEP_GAIN = { wood: 0.26, stairs: 0.3, tile: 0.3, rug: 0.24, carpet: 0.22, porch: 0.27, grass: 0.3, mud: 0.26,
-  gravel: 0.36, stone: 0.38, water: 0.26 };
+const STEP_GAIN = { wood: 0.26, stairs: 0.3, tile: 0.28, rug: 0.24, carpet: 0.22, porch: 0.27, grass: 0.3, mud: 0.28,
+  gravel: 0.34, stone: 0.34, water: 0.28 };
+const TOE_GAIN = { wood: 0.42, stairs: 0.5, tile: 0.45, rug: 0.5, carpet: 0.5, porch: 0.42, grass: 0.7, mud: 0.85, gravel: 0.75,
+  stone: 0.42, water: 0.6 };
 const SFX_GAIN = { click: 0.3, switch: 0.3, creak: 0.3, door_open: 0.34, door_close: 0.3, thud: 0.28, page: 0.24, pour: 0.26,
   sip: 0.22, meow: 0.15, chime: 0.24, match: 0.3, whoosh: 0.22, drawer: 0.25, curtain: 0.24, splash: 0.34, clink: 0.22,
-  gate: 0.3, cushion: 0.16, needle: 0.25, floor_creak: 0.16, chair_creak: 0.2 };
+  gate: 0.3, gate_close: 0.32, cushion: 0.16, needle: 0.25, floor_creak: 0.16, chair_creak: 0.2, board: 0.2, squeak: 0.09,
+  wet: 0.12, cloth: 0.07, rocker: 0.24, house_creak: 0.2, rattle: 0.3 };
 const SURF = { wood: 'wood', stairs: 'stairs', tile: 'tile', rug: 'rug', carpet: 'carpet', porch: 'porch', grass: 'grass',
   mud: 'mud', gravel: 'gravel', stone: 'stone', water: 'water', dirt: 'mud', path: 'stone', deck: 'porch' };
 const STEP_VARIANTS = 5;
@@ -8543,6 +8555,13 @@ const D = {
     for (let i = 0; i < n; i++) { const p = i / seg, k = Math.floor(p), f = p - k, a = v[k % pts], b = v[(k + 1) % pts]; out[i] = a + (b - a) * (1 - Math.cos(Math.PI * f)) * 0.5; }
     return out;
   },
+  // feedback comb (pipe / cavity resonance) y[n] = x[n] + g·y[n−d]; circ: wrapped steady state (loop-safe)
+  comb(x, sec, g, circ = false) {
+    const d = Math.max(1, Math.round(sec * SR)), n = x.length, y = new Float32Array(n);
+    const passes = circ ? 1 + Math.ceil(Math.log(1e-4) / Math.log(Math.abs(g) || 0.5) * d / n) : 1;
+    for (let p = 0; p < passes; p++) for (let i = 0; i < n; i++) { const j = i - d; y[i] = x[i] + g * (j >= 0 ? y[j] : circ ? y[j + n] : 0); }
+    x.set(y); return x;
+  },
   // Minnaert-style water bubble: decaying sine with a rising chirp (the "plink" of drops on water)
   bubble(out, i0, f0, tau, amp, rise = 0.3, wrap = false) {
     const n = out.length, len = Math.min(n, Math.round(tau * 6 * SR)), k1 = rise / (3 * tau);
@@ -8556,6 +8575,28 @@ const D = {
 };
 function mixAt(out, x, t0, k = 1) { const i0 = Math.round(t0 * SR); for (let i = 0; i < x.length && i0 + i < out.length; i++) out[i0 + i] += x[i] * k; }
 function fin(o, pk = 0.9) { D.fadeOut(o, 0.01); D.normPeak([o], pk); return [o]; }
+// short noise burst (a drop hitting something, a splash, a leaf-on-leaf contact): decaying white noise through a
+// band-pass, optionally with a low thump (heavy drop into soil or water). tgt = [[buffer, gain], ...]
+function splat(tgt, i0, dur, fc, q, wrap, thump) {
+  const c = coef('bandpass', fc, q, 0), b0 = c[0], b1 = c[1], b2 = c[2], a1 = c[3], a2 = c[4];
+  const n = tgt[0][0].length, len = Math.max(8, Math.round(dur * SR)), ring = len + Math.round(SR * 2 * q / Math.max(200, fc)), dk = 4 / len;
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let k = 0; k < ring; k++) {
+    const xi = k < len ? rs1() * Math.exp(-k * dk) * (k < 4 ? k / 4 : 1) : 0;
+    const y = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = xi; y2 = y1; y1 = y;
+    let idx = i0 + k; if (idx >= n) { if (!wrap) break; idx -= n; }
+    for (let t = 0; t < tgt.length; t++) tgt[t][0][idx] += y * tgt[t][1];
+  }
+  if (thump) {
+    const f0 = rr(150, 260), tl = Math.round(SR * 0.03); let ph = 0;
+    for (let k = 0; k < tl; k++) {
+      ph += f0 * (1 - 0.4 * k / tl) / SR;
+      let idx = i0 + k; if (idx >= n) { if (!wrap) break; idx -= n; }
+      const v = thump * Math.sin(TAU * ph) * Math.exp(-k / (tl * 0.3)) * (1 - Math.exp(-k / 8));
+      for (let t = 0; t < tgt.length; t++) tgt[t][0][idx] += v * tgt[t][1];
+    }
+  }
+}
 // noise burst with envelope/filters. o: {dur, amp, att, dec, hp, lp, bp:[f,Q], sweep:[f0,f1,Q], sweepFn, am(Hz), shape(u), color}
 function addNoise(out, t0, o) {
   const i0 = Math.round(t0 * SR); if (i0 >= out.length) return;
@@ -8637,6 +8678,7 @@ function texture0(o) {
   srand(o.seed || 7);
   const n = D.n(o.sec), nch = o.stereo ? 2 : 1, outs = [];
   for (let c = 0; c < nch; c++) outs.push(new Float32Array(n));
+  const pan = a => { const p = R() * 1.5708; return [a * Math.cos(p), a * Math.sin(p)]; };
   if (o.bands) for (const [f, tau, amp, rate] of o.bands) {
     const imps = outs.map(() => new Float32Array(n)), cnt = Math.round(rate * o.sec);
     for (let k = 0; k < cnt; k++) {
@@ -8644,6 +8686,28 @@ function texture0(o) {
       if (nch === 2) { const p = R() * 1.5708; imps[0][i] += a * Math.cos(p); imps[1][i] += a * Math.sin(p); } else imps[0][i] += a;
     }
     for (let c = 0; c < nch; c++) D.mode(imps[c], outs[c], f * (c ? 1.03 : 1), tau, amp, true);
+  }
+  // impact bands: `rate` impacts/s spread over `n` resonances log-spaced (and jittered, so nothing sounds pitched)
+  // across f, decaying tau[0]→tau[1] across the range, weighted by `tilt`; `click` adds the raw impact transient
+  if (o.ibands) for (const ib of [].concat(o.ibands)) {
+    const nb = ib.n || 16, imps = outs.map(() => new Float32Array(n)), clk = ib.click ? outs.map(() => new Float32Array(n)) : null;
+    for (let b = 0; b < nb; b++) {
+      const u = (b + R()) / nb, f = ib.f[0] * Math.pow(ib.f[1] / ib.f[0], u), tau = ib.tau[0] * Math.pow(ib.tau[1] / ib.tau[0], u) * rr(0.8, 1.25);
+      const w = ib.tilt ? interp(ib.tilt, u) : 1, cnt = Math.round(ib.rate * o.sec / nb * rr(0.75, 1.25));
+      for (const x of imps) x.fill(0);
+      for (let k = 0; k < cnt; k++) {
+        const i = (R() * n) | 0, a = (R() < 0.5 ? -1 : 1) * Math.pow(R(), ib.pow || 2.5);
+        if (nch === 2) { const [l, r] = pan(a); imps[0][i] += l; imps[1][i] += r; } else imps[0][i] += a;
+      }
+      for (let c = 0; c < nch; c++) {
+        D.mode(imps[c], outs[c], f * (c ? rr(0.97, 1.03) : 1), tau, w, true);
+        if (clk) { const s = imps[c], d = clk[c]; for (let i = 0; i < n; i++) d[i] += s[i] * w; }
+      }
+    }
+    if (clk) for (let c = 0; c < nch; c++) {
+      D.biquad(clk[c], 'highpass', ib.clickHp || 2500, 0.7, 0, true);
+      const d = clk[c], oc = outs[c]; for (let i = 0; i < n; i++) oc[i] += d[i] * ib.click;
+    }
   }
   if (o.bubbles) for (const bb of [].concat(o.bubbles)) {
     const cnt = Math.round(bb.rate * o.sec);
@@ -8657,7 +8721,16 @@ function texture0(o) {
       }
     }
   }
-  if (o.bands || o.bubbles) D.normRms(outs, 1);
+  if (o.splats) for (const sp of [].concat(o.splats)) {
+    const cnt = Math.round(sp.rate * o.sec);
+    for (let k = 0; k < cnt; k++) {
+      const i0 = (R() * n) | 0, a = sp.amp * Math.pow(R(), sp.pow || 1.5), fc = rlog(sp.f[0], sp.f[1]), dur = rr(sp.dur[0], sp.dur[1]);
+      const tgt = nch === 2 ? (([l, r]) => [[outs[0], l], [outs[1], r]])(pan(a)) : [[outs[0], a]];
+      splat(tgt, i0, dur, fc, sp.q || 1, true, sp.thump || 0);
+      if (sp.bub && R() < sp.bub.p) for (const [buf, g] of tgt) D.bubble(buf, (i0 + D.n(0.002)) % n, rlog(sp.bub.f[0], sp.bub.f[1]), rr(sp.bub.tau[0], sp.bub.tau[1]), g * (sp.bub.amp || 1), sp.bub.rise || 0.4, true);
+    }
+  }
+  if (o.bands || o.ibands || o.bubbles || o.splats) D.normRms(outs, 1);
   if (o.bed) for (const bd of [].concat(o.bed)) for (let c = 0; c < nch; c++) {
     const x = D.noise(n, bd.color || 'pink', true);
     if (bd.hp) D.biquad(x, 'highpass', bd.hp, 0.7, 0, true);
@@ -8681,39 +8754,69 @@ function texture0(o) {
 const RENDER = Object.create(null);
 Object.assign(RENDER, {
   // --- rain ---
-  // dense wash: thousands of tiny drop impacts across 8 bands + a soft pink bed (never flat white noise)
-  rainWash: () => texture({ sr: 32000, sec: 8.0, stereo: true, seed: 11, pow: 2.2,
-    bands: [[420, 0.0045, 0.45, 900], [700, 0.0038, 0.65, 1100], [1100, 0.0032, 0.8, 1200], [1650, 0.0027, 0.8, 1200],
-      [2400, 0.0022, 0.62, 1100], [3400, 0.0018, 0.42, 900], [4800, 0.0014, 0.25, 700], [6800, 0.001, 0.12, 500]],
-    bed: { color: 'pink', hp: 300, lp: 4200, amp: 0.45, am: [40, 0.7, 1.0] }, hp: 140, lp: 8000, rms: 0.16 }),
+  // heavy rain: ~16k drop impacts/s on 26 jittered resonances (leaves, grass, soil, puddles) with their crisp impact
+  // transients, a splash bed with slow intensity swells and a fizzy spray layer — never flat filtered noise
+  rainWash: () => texture({ sr: 32000, sec: 9.3, stereo: true, seed: 11,
+    ibands: { f: [260, 9500], n: 26, tau: [0.006, 0.0008], rate: 16000, pow: 2.2, tilt: [[0, 0.5], [0.3, 0.95], [0.55, 1], [0.8, 0.6], [1, 0.3]], click: 0.18, clickHp: 3000 },
+    bed: [{ color: 'pink', hp: 300, lp: 4500, amp: 0.45, am: [36, 0.65, 1.0] }, { color: 'white', hp: 4000, lp: 11000, amp: 0.12, am: [160, 0.25, 1], amPow: 2 }],
+    hp: 120, lp: 12000, rms: 0.16 }),
+  // drizzle: sparse fine drops (small drops ring higher and shorter) and a faint mist of high hiss
+  rainLight: () => texture({ sr: 32000, sec: 7.7, stereo: true, seed: 13,
+    ibands: { f: [650, 11000], n: 20, tau: [0.004, 0.0006], rate: 1400, pow: 2.8, tilt: [[0, 0.35], [0.4, 1], [0.75, 0.9], [1, 0.45]], click: 0.25, clickHp: 3500 },
+    bubbles: { rate: 18, f: [1800, 5000], tau: [0.002, 0.006], amp: 0.35, rise: 0.3 },
+    bed: { color: 'pink', hp: 1800, lp: 9000, amp: 0.22, am: [30, 0.5, 1] }, hp: 250, lp: 13000, rms: 0.12 }),
   // sparse, distinct nearby drops (leaves, wood, puddle plinks) — two loops of coprime length
   rainTicksA: () => texture({ sr: 32000, sec: 6.7, stereo: true, seed: 21, pow: 3,
-    bands: [[520, 0.008, 0.6, 9], [800, 0.006, 0.6, 10], [1250, 0.0045, 0.7, 10], [1900, 0.0035, 0.6, 10], [2800, 0.0026, 0.42, 8], [3900, 0.002, 0.26, 6]],
-    bubbles: { rate: 12, f: [1200, 3600], tau: [0.004, 0.012], amp: 0.6, rise: 0.35 }, hp: 200, lp: 8500, rms: 0.1 }),
+    ibands: { f: [450, 5200], n: 14, tau: [0.009, 0.0018], rate: 55, pow: 3, tilt: [[0, 0.7], [0.5, 1], [1, 0.5]] },
+    bubbles: { rate: 12, f: [1200, 3600], tau: [0.004, 0.012], amp: 0.6, rise: 0.35 }, hp: 200, lp: 9000, rms: 0.1 }),
   rainTicksB: () => texture({ sr: 32000, sec: 9.1, stereo: true, seed: 22, pow: 3,
-    bands: [[560, 0.008, 0.6, 9], [860, 0.006, 0.6, 10], [1320, 0.0045, 0.7, 10], [2000, 0.0035, 0.6, 10], [2950, 0.0026, 0.42, 8], [4100, 0.002, 0.26, 6]],
-    bubbles: { rate: 12, f: [1100, 3400], tau: [0.004, 0.012], amp: 0.6, rise: 0.35 }, hp: 200, lp: 8500, rms: 0.1 }),
+    ibands: { f: [480, 5600], n: 14, tau: [0.009, 0.0018], rate: 55, pow: 3, tilt: [[0, 0.7], [0.5, 1], [1, 0.5]] },
+    bubbles: { rate: 12, f: [1100, 3400], tau: [0.004, 0.012], amp: 0.6, rise: 0.35 }, hp: 200, lp: 9000, rms: 0.1 }),
   // heavy-rain low roar
   rainLow: () => texture({ sr: 8000, sec: 8.3, stereo: true, seed: 12, bed: { color: 'brown', lp: 380, amp: 1, am: [16, 0.6, 1] }, hp: 30, rms: 0.18 }),
-  // roof patter heard from inside the loft: dull drumming thuds
-  roof: () => texture({ sr: 16000, sec: 7.7, stereo: true, seed: 31, pow: 2.4,
-    bands: [[170, 0.03, 0.7, 250], [300, 0.02, 0.8, 300], [560, 0.012, 0.7, 350], [1050, 0.007, 0.5, 300], [1900, 0.004, 0.32, 250], [3200, 0.0025, 0.18, 200]],
-    bed: { color: 'pink', lp: 1200, hp: 80, amp: 0.35 }, hp: 60, lp: 3200, rms: 0.16 }),
-  // drops ticking on skylight glass
-  glass: () => texture({ sr: 32000, sec: 6.3, seed: 41, pow: 2.5,
-    bands: [[1500, 0.004, 0.4, 60], [2900, 0.0028, 0.8, 90], [4100, 0.002, 0.65, 80], [5600, 0.0015, 0.35, 60]],
-    bubbles: { rate: 6, f: [1500, 3500], tau: [0.003, 0.008], amp: 0.4 }, bed: { color: 'pink', hp: 800, lp: 4500, amp: 0.25 }, hp: 300, lp: 7500, rms: 0.12 }),
-  // porch roof drumming + drip-line plops
-  porch: () => texture({ sr: 24000, sec: 7.1, stereo: true, seed: 51, pow: 2.3,
-    bands: [[130, 0.045, 0.8, 160], [240, 0.03, 0.8, 200], [470, 0.016, 0.7, 250], [950, 0.008, 0.55, 250], [1900, 0.0045, 0.32, 200], [3300, 0.0025, 0.18, 150]],
-    bubbles: [{ rate: 9, f: [700, 1800], tau: [0.008, 0.02], amp: 0.7, rise: 0.4 }, { rate: 3, f: [280, 600], tau: [0.015, 0.035], amp: 0.7, rise: 0.3 }],
-    bed: { color: 'pink', hp: 200, lp: 3000, amp: 0.35 }, hp: 60, lp: 6000, rms: 0.16 }),
-  // gutter trickle + downspout gurgle
-  gutter: () => texture({ sr: 24000, sec: 5.3, seed: 61,
-    bubbles: [{ rate: 110, f: [380, 1500], tau: [0.004, 0.014], amp: 0.6, rise: 0.4 }, { rate: 3, burst: 7, spread: 0.12, f: [140, 420], tau: [0.015, 0.04], amp: 1, rise: 0.25 }],
-    bed: { color: 'pink', bp: [900, 0.8], amp: 0.5, am: [30, 0.3, 1.0], amPow: 2 }, hp: 90, lp: 5000, rms: 0.14 }),
+  // rain on the slate roof heard from under it (loft): soft dense patter, the odd heavier drop, boards damp the top end
+  roof: () => texture({ sr: 16000, sec: 8.9, seed: 31,
+    ibands: { f: [120, 3600], n: 18, tau: [0.035, 0.003], rate: 2600, pow: 2.3, tilt: [[0, 0.7], [0.3, 1], [0.6, 0.7], [1, 0.25]] },
+    bed: { color: 'pink', lp: 900, hp: 70, amp: 0.35, am: [28, 0.7, 1] }, hp: 55, lp: 4200, rms: 0.16 }),
+  // drops tapping on a window pane, heard from inside (two variants so neighbouring panes never phase together)
+  glassA: () => rGlass(41, 6.3),
+  glassB: () => rGlass(43, 7.1),
+  // porch roof drumming, heard from below
+  porch: () => texture({ sr: 24000, sec: 7.1, seed: 51,
+    ibands: { f: [110, 3600], n: 18, tau: [0.05, 0.003], rate: 1900, pow: 2.3, tilt: [[0, 0.8], [0.3, 1], [0.6, 0.65], [1, 0.25]] },
+    bed: { color: 'pink', hp: 200, lp: 3000, amp: 0.3 }, hp: 60, lp: 6500, rms: 0.16 }),
+  // downspout: water gushing out onto the splash block + slugs gurgling down the hollow metal pipe
+  gutter: () => at(24000, () => {
+    const sec = 6.7, n = D.n(sec);
+    const [out] = texture0({ sec, seed: 61, bubbles: { rate: 70, f: [380, 1800], tau: [0.005, 0.018], amp: 0.6, rise: 0.4 },
+      splats: { rate: 40, dur: [0.004, 0.02], f: [700, 5000], q: 0.9, amp: 0.5 },
+      bed: { color: 'white', bp: [1500, 0.7], amp: 0.55, am: [110, 0.15, 1], amPow: 2 }, hp: 120, lp: 7000, rms: 1 });
+    const [pipe] = texture0({ sec, seed: 62, bubbles: { rate: 5, burst: 7, spread: 0.14, f: [140, 460], tau: [0.02, 0.05], amp: 1, rise: 0.25 }, rms: 1 });
+    D.comb(pipe, 0.0068, 0.55, true);                   // ~147 Hz pipe resonance → the hollow, metallic gurgle
+    D.biquad(pipe, 'lowpass', 1800, 0.7, 0, true); D.normRms([pipe], 1);
+    for (let i = 0; i < n; i++) out[i] = out[i] * 0.8 + pipe[i] * 0.55;
+    D.normRms([out], 0.14); return [out];
+  }),
+  // heavy drops falling off the eaves / porch-roof edge: splats into puddles and soil, some with a bubble plink
+  dripLine: () => texture({ sr: 32000, sec: 8.3, seed: 73,
+    splats: { rate: 26, dur: [0.004, 0.018], f: [600, 5000], q: 0.8, amp: 1, pow: 1.4, thump: 0.3, bub: { p: 0.35, f: [550, 1700], tau: [0.008, 0.028], amp: 0.8, rise: 0.45 } },
+    bed: { color: 'pink', hp: 900, lp: 6000, amp: 0.12 }, hp: 90, lp: 11000, rms: 0.12 }),
   drip: () => texture({ sr: 32000, sec: 7.9, seed: 71, bands: [[2600, 0.0015, 0.4, 1.1]],
     bubbles: { rate: 1.3, f: [650, 1500], tau: [0.012, 0.03], amp: 1, rise: 0.45, pow: 0.7 }, hp: 150, lp: 9000, rms: 0.05 }),
+  // rain on the pond: a fizz of tiny bubbles (small drops on water peak around 13-15 kHz), plinks, soft splash hiss
+  pond: () => texture({ sr: 32000, sec: 7.3, seed: 75,
+    bubbles: [{ rate: 520, f: [5000, 14500], tau: [0.0007, 0.002], amp: 0.45, rise: 0.2 }, { rate: 28, f: [900, 3400], tau: [0.004, 0.012], amp: 0.8, rise: 0.35 },
+      { rate: 2, f: [380, 900], tau: [0.01, 0.03], amp: 0.6, rise: 0.3 }],
+    splats: { rate: 140, dur: [0.002, 0.006], f: [2500, 9000], q: 0.8, amp: 0.3, pow: 2 },
+    bed: { color: 'white', hp: 7000, lp: 15000, amp: 0.25, am: [30, 0.6, 1] }, hp: 250, lp: 15500, rms: 0.12 }),
+  // rain on a tree canopy: dense soft leaf taps (lower and duller than on hard ground) with slow swells
+  leaves: () => texture({ sr: 24000, sec: 8.7, seed: 77,
+    ibands: { f: [300, 5200], n: 20, tau: [0.012, 0.0015], rate: 5200, pow: 2.4, tilt: [[0, 0.6], [0.35, 1], [0.7, 0.7], [1, 0.35]] },
+    bed: { color: 'pink', bp: [1500, 0.5], amp: 0.3, am: [30, 0.45, 1] }, hp: 150, lp: 9000, rms: 0.14 }),
+  // leaves rustling in the wind: thousands of tiny leaf-on-leaf contacts
+  rustle: () => texture({ sr: 24000, sec: 9.1, seed: 79,
+    splats: { rate: 900, dur: [0.001, 0.006], f: [1400, 7500], q: 1.1, amp: 1, pow: 2 },
+    bed: { color: 'pink', hp: 1200, lp: 8000, amp: 0.35, am: [70, 0.25, 1], amPow: 2 }, hp: 400, lp: 10000, rms: 0.14 }),
   wind: () => texture({ sr: 16000, sec: 9.7, stereo: true, seed: 97, bed: { color: 'pink', lp: 2500, amp: 1, am: [10, 0.35, 1], amPow: 2 }, hp: 60, rms: 0.14 }),
   // --- kitchen / misc loops ---
   boil: () => texture({ sr: 24000, sec: 6.1, seed: 81,
@@ -8749,25 +8852,52 @@ Object.assign(RENDER, {
     D.biquad(out, 'highpass', 700, 0.7, 0, true);
     D.normRms([out], 0.05); return [out];
   }),
-  // grandfather clock: escapement double-click "tick" and a lower "tock", with the wooden case resonance
-  clock() {
-    srand(121); const o = D.zeros(2.0);
-    const click = (t0, s, a) => strike(o, t0, [[2350 * s, 0.010, 1], [3720 * s, 0.007, 0.7], [5480 * s, 0.004, 0.4], [1180 * s, 0.018, 0.5], [205 * s, 0.045, 0.35], [410 * s, 0.025, 0.25]], a, 0.0006, 0.01);
-    click(0.01, 1, 1); click(0.021, 1.03, 0.35); click(1.01, 0.86, 0.9); click(1.019, 0.9, 0.3);
+  // wet wood hissing: moisture escaping as a fizzing high hiss with slow swells and the odd narrow steam squeal
+  fireHiss: () => at(32000, () => {
+    srand(105); const sec = 9.7, n = D.n(sec), o = new Float32Array(n);
+    const h = D.white(n); D.biquad(h, 'highpass', 3800, 0.7, 0, true); D.biquad(h, 'lowpass', 9500, 0.7, 0, true); D.normRms([h], 1);
+    const am = D.curve(n, 12, 0, 1), fz = D.curve(n, 180, 0.3, 1);
+    for (let i = 0; i < n; i++) o[i] = h[i] * Math.pow(am[i], 2.2) * fz[i];
+    for (let k = 0; k < 3; k++) {                       // steam squeals: noise ringing a very narrow resonance
+      const i0 = D.n(rr(0, sec - 1.5)), len = D.n(rr(0.4, 1.2)), ex = new Float32Array(len), sq = new Float32Array(len);
+      for (let j = 0; j < len; j++) ex[j] = rs1() * Math.pow(Math.sin(Math.PI * j / len), 1.5);
+      D.mode(ex, sq, rr(2400, 4800), 0.012, 0.02);
+      for (let j = 0; j < len; j++) o[(i0 + j) % n] += sq[j];
+    }
+    D.normRms([o], 0.05); return [o];
+  }),
+  // grandfather clock, 8 beats: escape-wheel drop + lock on every beat, a small beat error (tick and tock not quite
+  // evenly spaced), per-beat variation, and the tall wooden case ringing underneath
+  clock: () => at(32000, () => {
+    srand(121); const o = D.zeros(8.0), CASE = [[182, 0.05, 0.35], [305, 0.035, 0.3], [470, 0.03, 0.22], [860, 0.02, 0.15]];
+    for (let k = 0; k < 8; k++) {
+      const tock = k % 2 === 1, t0 = 0.01 + k + (tock ? 0.014 : 0) + rs1() * 0.0012, s = (tock ? 0.87 : 1) * rr(0.99, 1.01), a = (tock ? 0.9 : 1) * rr(0.93, 1.05);
+      const esc = [[2350 * s, 0.009, 1], [3720 * s, 0.006, 0.7], [5480 * s, 0.0035, 0.4], [1180 * s, 0.016, 0.5]];
+      strike(o, t0, esc, a, 0.0005, 0.012);
+      strike(o, t0 + rr(0.009, 0.013), esc, a * rr(0.28, 0.4), 0.0004, 0.012);
+      strike(o, t0, CASE, a * 0.7, 0.002, 0.02);
+    }
     D.normPeak([o], 0.9); return [o];
-  },
-  // cat purr: ~25 Hz laryngeal pulse train, exhale (stronger) / inhale (softer, slower), warm low-passed
+  }),
+  // cat purr: ~25 Hz laryngeal pulses on the exhale (stronger) and inhale (softer, lower); breaths of varying length
+  // so the loop never sounds mechanical
   purr: () => at(8000, () => {
-    srand(131); const n = D.n(4.0), o = new Float32Array(n), nz = D.white(n); D.biquad(nz, 'lowpass', 900, 0.7);
-    const segs = [[0.0, 2.1, 25.5, 1.0], [2.25, 1.6, 21.5, 0.6]];
-    for (const [s0, dur, f0, amp] of segs) {
-      let ph = 0; const i0 = D.n(s0), len = D.n(dur);
-      for (let j = 0; j < len && i0 + j < n; j++) {
-        const t = j / SR, env = Math.pow(Math.sin(Math.PI * t / dur), 0.6);
-        ph += f0 * (1 + 0.05 * Math.sin(TAU * 0.8 * t)) / SR;
+    srand(131); const sec = 9.6, n = D.n(sec), o = new Float32Array(n), nz = D.white(n); D.biquad(nz, 'lowpass', 900, 0.7);
+    const segs = []; let tot = 0;
+    for (let k = 0; k < 4; k++) {
+      const ex = rr(1.3, 1.9), inh = rr(0.8, 1.2), g1 = rr(0.06, 0.14), g2 = rr(0.06, 0.14);
+      segs.push([ex, rr(24, 27.5), rr(0.85, 1.05), g1], [inh, rr(20, 23), rr(0.48, 0.65), g2]); tot += ex + inh + g1 + g2;
+    }
+    let t = 0; const sc = sec / tot;
+    for (const [dur0, f0, amp, gap] of segs) {
+      const dur = dur0 * sc, i0 = D.n(t), len = D.n(dur); let ph = 0;
+      for (let j = 0; j < len; j++) {
+        const tt = j / SR, env = Math.pow(Math.sin(Math.PI * tt / dur), 0.6), idx = (i0 + j) % n;
+        ph += f0 * (1 + 0.05 * Math.sin(TAU * 0.8 * tt)) / SR;
         const fr = ph - Math.floor(ph), pulse = Math.exp(-fr / 0.14);
-        o[i0 + j] += amp * env * (pulse * (0.65 + 0.8 * nz[i0 + j]) + 0.12 * nz[i0 + j]);
+        o[idx] += amp * env * (pulse * (0.65 + 0.8 * nz[idx]) + 0.12 * nz[idx]);
       }
+      t += (dur0 + gap) * sc;
     }
     D.biquad(o, 'lowpass', 520, 0.7, 0, true); D.biquad(o, 'lowpass', 700, 0.7, 0, true); D.biquad(o, 'highpass', 28, 0.7, 0, true);
     D.normRms([o], 0.2); return [o];
@@ -8785,27 +8915,93 @@ Object.assign(RENDER, {
     for (let i = 0; i < n; i++) o[i] = hiss[i] + cl[i] + rum[i];
     return [o];
   }),
-  // small room impulse response (1.5 s, darkening tail, a few early reflections)
-  ir() {
-    srand(5); const n = D.n(1.5), chs = [];
+  // indoor response (unit energy): a furnished ~90 m³ cottage room — discrete early reflections (floor, ceiling, walls,
+  // each a little duller) melting into a decorrelated late field, RT60 ≈ 0.62 s low / 0.5 s mid / 0.28 s high
+  irRoom() {
+    srand(5); const n = D.n(1.0), chs = [];
+    const BANDS = [[0, 300, 0.62], [300, 1500, 0.5], [1500, 5000, 0.4], [5000, 0, 0.28]];
+    const ER = [0.0031, 0.0052, 0.0069, 0.0086, 0.0094, 0.0118, 0.0135, 0.0151, 0.0173, 0.019, 0.0216, 0.0242, 0.0269, 0.0295, 0.0328, 0.0361, 0.0402, 0.0447];
     for (let c = 0; c < 2; c++) {
-      const x = new Float32Array(n); let y = 0;
-      for (let i = 0; i < n; i++) { const t = i / SR, fc = 900 + 7000 * Math.exp(-t / 0.25), a = 1 - Math.exp(-TAU * fc / SR); y += a * (rs1() - y); x[i] = y * Math.exp(-t / 0.3) * Math.min(1, t / 0.006); }
-      for (const [d, a] of [[0.007, 0.5], [0.0115, 0.35], [0.017, 0.3], [0.023, 0.22], [0.031, 0.18]]) x[D.n(d * (c ? 1.13 : 1))] += a * (R() < 0.5 ? -1 : 1);
-      chs.push(x);
+      const late = new Float32Array(n), early = new Float32Array(n);
+      for (const [lo, hi, rt] of BANDS) {
+        const x = D.white(n), k = 6.91 / rt;
+        if (lo) { D.biquad(x, 'highpass', lo, 0.6); D.biquad(x, 'highpass', lo, 0.6); }
+        if (hi) { D.biquad(x, 'lowpass', hi, 0.6); D.biquad(x, 'lowpass', hi, 0.6); }
+        for (let i = 0; i < n; i++) { const t = i / SR; late[i] += x[i] * Math.exp(-k * t) * clamp((t - 0.008) / 0.03, 0, 1); }
+      }
+      ER.forEach((t0, j) => {
+        const t = t0 * (c ? rr(1.03, 1.12) : rr(0.94, 1.02)), w = Math.max(2, Math.round(SR * (0.0001 + t * 0.01))), i0 = D.n(t);
+        const a = (R() < 0.3 ? -1 : 1) * Math.pow(0.86, j) * rr(0.7, 1.1);
+        for (let q = 0; q < 2 * w && i0 + q < n; q++) early[i0 + q] += a * (1 - Math.cos(Math.PI * q / w)) * 0.5 / Math.sqrt(w);
+      });
+      let el = 0, ee = 0; for (let i = 0; i < n; i++) { el += late[i] * late[i]; ee += early[i] * early[i]; }
+      const kl = Math.sqrt(0.58 / (el || 1)), ke = Math.sqrt(0.42 / (ee || 1)), x = new Float32Array(n);
+      for (let i = 0; i < n; i++) x[i] = late[i] * kl + early[i] * ke;
+      D.fadeOut(x, 0.05); chs.push(x);
+    }
+    return chs;
+  },
+  // outdoor response (unit energy): open air — a slap off the house front, sparse returns from trees and the fence,
+  // the hills' faint late echoes and a dark, low diffuse tail
+  irOut() {
+    srand(9); const n = D.n(1.6), chs = [];
+    for (let c = 0; c < 2; c++) {
+      const taps = new Float32Array(n), tail = D.white(n);
+      const TAPS = [[rr(0.011, 0.017), 0.6, 0.0002], [rr(0.02, 0.03), 0.36, 0.0003]];
+      for (let k = 0; k < 9; k++) TAPS.push([rr(0.04, 0.17), rr(0.07, 0.2) * (1 - k / 12), rr(0.0004, 0.0012)]);
+      TAPS.push([rr(0.42, 0.55), 0.13, 0.0025], [rr(0.72, 0.95), 0.08, 0.0035]);
+      for (const [t, a0, wd] of TAPS) {
+        const i0 = D.n(t * (c ? rr(1.02, 1.09) : 1)), w = Math.max(2, Math.round(wd * SR)), a = (R() < 0.35 ? -1 : 1) * a0;
+        for (let q = 0; q < 2 * w && i0 + q < n; q++) taps[i0 + q] += a * (1 - Math.cos(Math.PI * q / w)) * 0.5 / Math.sqrt(w);
+      }
+      D.biquad(tail, 'lowpass', 1500, 0.6); D.biquad(tail, 'lowpass', 1800, 0.6);
+      for (let i = 0; i < n; i++) { const t = i / SR; tail[i] *= Math.exp(-5.3 * t) * clamp((t - 0.03) / 0.08, 0, 1); }
+      let et = 0, ea = 0; for (let i = 0; i < n; i++) { et += tail[i] * tail[i]; ea += taps[i] * taps[i]; }
+      const kt = Math.sqrt(0.35 / (et || 1)), ka = Math.sqrt(0.65 / (ea || 1)), x = new Float32Array(n);
+      for (let i = 0; i < n; i++) x[i] = taps[i] * ka + tail[i] * kt;
+      D.fadeOut(x, 0.1); chs.push(x);
     }
     return chs;
   },
 });
+// drops tapping on glass: bright ticks with their impact transient, the odd fat drop thocking the pane, rivulets
+function rGlass(seed, sec) {
+  return texture({ sr: 32000, sec, seed,
+    ibands: [{ f: [1700, 9500], n: 14, tau: [0.003, 0.0006], rate: 75, pow: 2.6, tilt: [[0, 0.6], [0.4, 1], [1, 0.5]], click: 0.3, clickHp: 3500 },
+      { f: [170, 950], n: 6, tau: [0.02, 0.007], rate: 7, pow: 1.8, tilt: [[0, 0.6], [1, 0.35]] }],
+    bubbles: { rate: 14, f: [2500, 6500], tau: [0.0015, 0.004], amp: 0.2, rise: 0.25 },
+    bed: { color: 'pink', bp: [3200, 0.8], amp: 0.07, am: [20, 0.3, 1] }, hp: 130, lp: 12500, rms: 0.12 });
+}
 
-// fire pops (live-scheduled on top of the crackle loop so loud pops never repeat in a pattern)
-for (let k = 0; k < 8; k++) RENDER['pop' + k] = () => {
-  srand(200 + k); const o = D.zeros(0.3);
-  strike(o, 0.002, [[rr(450, 900), rr(0.008, 0.015), 1], [rr(1300, 2200), 0.005, 0.6], [rr(2800, 4500), 0.0025, 0.4]], 1, 0.0005);
-  addNoise(o, 0, { dur: 0.03, amp: 0.5, att: 0.0003, dec: 0.004, hp: 1200 });
-  if (R() < 0.4) addNoise(o, 0.01, { dur: 0.15, amp: 0.12, att: 0.01, dec: 0.05, hp: 4000 });
+// fire, live-scheduled on top of the bed so nothing repeats in a pattern: crackles (bursts of micro-cracks), pops (a
+// sharp snap, a charred-wood knock, sometimes an ember spray or a puff of steam) and logs settling in the grate
+for (let k = 0; k < 12; k++) RENDER['crk' + k] = () => at(32000, () => {
+  srand(800 + k); const o = D.zeros(0.25), cnt = 2 + ((R() * R() * 9) | 0), spread = rr(0.004, 0.06);
+  for (let j = 0; j < cnt; j++) {
+    const t = Math.pow(R(), 1.6) * spread, a = rr(0.25, 1) * (j ? 0.7 : 1);
+    strike(o, t, [[rlog(1300, 3000), rr(0.0006, 0.0014), 1], [rlog(3000, 7000), rr(0.0003, 0.0008), 0.7]], a, 0.00015, 0.05);
+  }
+  if (R() < 0.5) addNoise(o, 0, { dur: 0.02, amp: 0.2, att: 0.0002, dec: 0.003, hp: 3000 });
   return fin(o);
-};
+});
+for (let k = 0; k < 8; k++) RENDER['pop' + k] = () => at(32000, () => {
+  srand(200 + k); const o = D.zeros(0.45), nl = D.n(rr(0.0006, 0.0015));
+  for (let i = 0; i < nl; i++) o[i] += 0.8 * (1 - 2 * i / nl);                           // N-shaped pressure snap
+  strike(o, 0.0005, [[rr(450, 900), rr(0.008, 0.016), 0.8], [rr(1300, 2300), 0.005, 0.6], [rr(2800, 4800), 0.0025, 0.45]], 1, 0.0004);
+  addNoise(o, 0, { dur: 0.03, amp: 0.45, att: 0.0003, dec: 0.004, hp: 1500 });
+  if (R() < 0.55) for (let j = 0, m = 3 + ((R() * 8) | 0); j < m; j++) strike(o, rr(0.02, 0.3), [[rlog(2500, 7000), 0.0006, 1]], rr(0.05, 0.25), 0.0002);
+  if (R() < 0.35) addNoise(o, 0.01, { dur: 0.25, amp: 0.1, att: 0.01, dec: 0.08, bp: [5500, 0.8] });
+  return fin(o);
+});
+for (let k = 0; k < 3; k++) RENDER['settle' + k] = () => at(32000, () => {
+  srand(830 + k); const o = D.zeros(1.6), t = rr(0.18, 0.4);
+  addNoise(o, 0, { dur: rr(0.25, 0.5), amp: 0.35, shape: u => Math.pow(Math.sin(Math.PI * u), 1.2), bp: [rr(900, 1600), 0.9], am: 70 });   // log slides
+  addThump(o, t, rr(110, 150), rr(60, 80), 0.07, 0.7);
+  strike(o, t, [[rr(180, 260), 0.03, 0.7], [rr(420, 600), 0.02, 0.55], [rr(900, 1300), 0.01, 0.35]], 0.9, 0.002);
+  for (let j = 0; j < 14; j++) strike(o, t + Math.pow(R(), 1.5) * 0.9, [[rlog(2500, 8000), rr(0.0005, 0.0012), 1]], rr(0.05, 0.3), 0.0002);  // embers
+  addNoise(o, t, { dur: 0.9, amp: 0.15, att: 0.05, dec: 0.3, bp: [2800, 0.6], am: 40 });                                            // flare-up
+  return fin(o, 0.85);
+});
 // random nearby raindrops: puddle plinks and leaf/wood ticks
 for (let k = 0; k < 8; k++) RENDER['drop' + k] = () => {
   srand(300 + k); const o = D.zeros(0.12);
@@ -8815,90 +9011,136 @@ for (let k = 0; k < 8; k++) RENDER['drop' + k] = () => {
 };
 
 // ---- footsteps ----
-function rStep(s, seed) {
+// heel strike ('h') and toe roll-off ('t') are separate buffers so the engine sets the gait timing (walk / run /
+// crouch / stairs up or down). Outdoors everything is wet.
+function rStep(s, part, seed) {
   srand(seed);
-  const out = D.zeros(0.42), toe = rr(0.065, 0.1), J = () => rr(0.92, 1.08);
+  const heel = part === 'h', out = D.zeros(0.32), J = () => rr(0.92, 1.08);
   switch (s) {
     case 'wood': case 'stairs': {
       const st = s === 'stairs';
-      const m = st ? [[115 * J(), 0.06, 0.8], [250 * J(), 0.04, 0.6], [520 * J(), 0.02, 0.45], [1080 * J(), 0.01, 0.3], [2100 * J(), 0.004, 0.14]]
-        : [[165 * J(), 0.035, 0.6], [390 * J(), 0.022, 0.55], [820 * J(), 0.012, 0.4], [1600 * J(), 0.006, 0.24], [2900 * J(), 0.003, 0.1]];
-      addThump(out, 0, 130, 85, st ? 0.05 : 0.035, 0.5);
-      strike(out, 0.001, m, 1, 0.0015);
-      strike(out, toe, m, rr(0.35, 0.55), 0.0012);
-      addNoise(out, 0.004, { dur: 0.08, amp: 0.07, dec: 0.025, bp: [2400, 0.8] });
+      const m = st ? [[112 * J(), 0.06, 0.8], [240 * J(), 0.04, 0.65], [505 * J(), 0.022, 0.45], [1050 * J(), 0.011, 0.3], [2100 * J(), 0.005, 0.14]]
+        : [[160 * J(), 0.035, 0.6], [385 * J(), 0.022, 0.55], [810 * J(), 0.012, 0.4], [1600 * J(), 0.006, 0.24], [2900 * J(), 0.003, 0.1]];
+      if (heel) { addThump(out, 0, 125, 80, st ? 0.05 : 0.035, 0.5); strike(out, 0.001, m, 1, 0.0018); addNoise(out, 0.001, { dur: 0.04, amp: 0.1, dec: 0.01, bp: [2600, 0.8] }); }
+      else { strike(out, 0.002, m, 0.45, 0.003); addNoise(out, 0, { dur: 0.1, amp: 0.16, att: 0.012, dec: 0.03, bp: [rr(2000, 3200), 0.9], am: 160 }); }
       break;
     }
-    case 'tile': {
-      const m = [[1850 * J(), 0.009, 0.6], [3300 * J(), 0.006, 0.55], [5200 * J(), 0.0035, 0.3], [7300 * J(), 0.002, 0.15]];
-      strike(out, 0, m, 1, 0.0006);
-      addNoise(out, 0, { dur: 0.05, amp: 0.35, dec: 0.012, lp: 350 });
-      addThump(out, 0, 150, 100, 0.02, 0.25);
-      strike(out, toe * 0.8, m, rr(0.5, 0.7), 0.0005);
+    case 'tile': {        // ceramic tiles on a screed, soft-soled shoes: a dull tap rather than a click
+      const m = [[rr(850, 1000), 0.006, 0.5], [rr(1650, 1900), 0.0045, 0.5], [rr(2900, 3300), 0.003, 0.35], [rr(4800, 5600), 0.0016, 0.2]];
+      if (heel) { strike(out, 0, m, 1, 0.0012); addThump(out, 0, 150, 105, 0.018, 0.35); addNoise(out, 0, { dur: 0.012, amp: 0.25, dec: 0.003, hp: 5000 }); }
+      else { strike(out, 0.001, m, 0.5, 0.0015); addNoise(out, 0, { dur: 0.06, amp: 0.2, att: 0.008, dec: 0.02, bp: [rr(1700, 2600), 2.5], am: 220 }); }
       break;
     }
     case 'rug': case 'carpet': {
-      const c = s === 'carpet';
-      addNoise(out, 0, { dur: 0.15, amp: 1, att: 0.006, dec: 0.04, lp: c ? 220 : 300, color: 'pink' });
-      addThump(out, 0, 100, 70, 0.03, 0.35);
-      addNoise(out, 0.01, { dur: 0.15, amp: c ? 0.05 : 0.08, att: 0.015, dec: 0.05, bp: [1800, 0.7] });
-      addNoise(out, toe, { dur: 0.1, amp: 0.45, att: 0.006, dec: 0.03, lp: c ? 220 : 300, color: 'pink' });
+      const c = s === 'carpet', lp = c ? 230 : 300;
+      if (heel) { addNoise(out, 0, { dur: 0.15, amp: 1, att: 0.006, dec: 0.04, lp, color: 'pink' }); addThump(out, 0, 100, 70, 0.03, 0.35); addNoise(out, 0.008, { dur: 0.14, amp: c ? 0.05 : 0.08, att: 0.015, dec: 0.05, bp: [1800, 0.7] }); }
+      else { addNoise(out, 0, { dur: 0.11, amp: 0.8, att: 0.008, dec: 0.03, lp, color: 'pink' }); addNoise(out, 0.01, { dur: 0.12, amp: c ? 0.05 : 0.07, att: 0.02, dec: 0.04, bp: [2400, 0.7], am: 90 }); }
       break;
     }
-    case 'porch': {
-      const m = [[92 * J(), 0.09, 0.8], [205 * J(), 0.055, 0.6], [430 * J(), 0.025, 0.45], [880 * J(), 0.012, 0.3], [1800 * J(), 0.005, 0.14]];
-      addThump(out, 0, 120, 75, 0.06, 0.45);
-      strike(out, 0.001, m, 1, 0.0015);
-      strike(out, rr(0.02, 0.035), [[m[2][0] * 1.3, 0.015, 0.4], [m[3][0] * 1.2, 0.008, 0.3]], 0.25, 0.001);
-      strike(out, toe, m, rr(0.3, 0.45), 0.0012);
-      for (let k = 0; k < 2; k++) D.bubble(out, D.n(rr(0.01, 0.12)), rlog(900, 2200), rr(0.004, 0.01), 0.08, 0.3);
+    case 'porch': {       // deck boards over a hollow crawl space: a boomy knock and a loose-board rattle
+      const m = [[88 * J(), 0.09, 0.8], [196 * J(), 0.055, 0.6], [420 * J(), 0.026, 0.45], [860 * J(), 0.012, 0.3], [1750 * J(), 0.005, 0.14]];
+      if (heel) { addThump(out, 0, 115, 72, 0.065, 0.5); strike(out, 0.001, m, 1, 0.0018); strike(out, rr(0.018, 0.035), [[m[2][0] * 1.3, 0.015, 0.4], [m[3][0] * 1.2, 0.008, 0.3]], 0.28, 0.001); }
+      else { strike(out, 0.002, m, 0.4, 0.003); addNoise(out, 0, { dur: 0.09, amp: 0.13, att: 0.01, dec: 0.03, bp: [rr(1800, 2800), 0.9], am: 150 }); }
       break;
     }
-    case 'grass': {
-      addNoise(out, 0, { dur: 0.2, amp: 0.55, att: 0.015, dec: 0.06, bp: [3000, 0.7] });
-      addGrains(out, 0.005, 0.12, 40, [[3200, 0.0012, 0.6], [5200, 0.0008, 0.5]], 0.5);
-      addNoise(out, 0.02, { dur: 0.12, amp: 0.35, att: 0.01, dec: 0.04, sweep: [450, 1100, 3] });
-      addNoise(out, 0, { dur: 0.08, amp: 0.5, att: 0.005, dec: 0.025, lp: 180, color: 'pink' });
-      addNoise(out, toe, { dur: 0.15, amp: 0.35, att: 0.01, dec: 0.05, bp: [3200, 0.7] });
+    case 'stone': {       // wet flagstones: a hard contact, grit under the sole, a thin film of water
+      const m = [[rr(600, 700), 0.01, 0.5], [rr(1400, 1600), 0.006, 0.45], [rr(2600, 3000), 0.0035, 0.3], [rr(4300, 5000), 0.002, 0.18]];
+      if (heel) {
+        strike(out, 0, m, 1, 0.001); addNoise(out, 0, { dur: 0.06, amp: 0.45, att: 0.002, dec: 0.016, lp: 260, color: 'pink' });
+        addGrains(out, 0.002, 0.05, 14, [[3600, 0.0008, 0.5], [5600, 0.0006, 0.4]], 0.3, 'decay'); addNoise(out, 0.002, { dur: 0.05, amp: 0.25, att: 0.002, dec: 0.012, hp: 1800 });
+      } else { strike(out, 0.001, m, 0.4, 0.001); addGrains(out, 0.004, 0.07, 22, [[3200, 0.0009, 0.5], [5000, 0.0006, 0.4]], 0.4); addNoise(out, 0, { dur: 0.08, amp: 0.14, att: 0.01, dec: 0.025, bp: [2800, 1], am: 200 }); }
       break;
     }
-    case 'mud': {
-      addNoise(out, 0, { dur: 0.08, amp: 0.6, att: 0.004, dec: 0.03, lp: 200, color: 'pink' });
-      addNoise(out, 0.01, { dur: 0.2, amp: 0.6, att: 0.02, dec: 0.07, sweep: [320, 950, 4.5], am: 60 });
-      addNoise(out, 0.2, { dur: 0.16, amp: 0.4, att: 0.015, dec: 0.05, sweep: [900, 380, 4] });
-      for (let k = 0; k < 3; k++) D.bubble(out, D.n(rr(0.03, 0.25)), rlog(250, 700), rr(0.01, 0.03), 0.25, 0.3);
+    case 'grass': {       // wet turf: a soft squish, blades swishing, a little water
+      if (heel) {
+        addNoise(out, 0, { dur: 0.09, amp: 0.55, att: 0.005, dec: 0.028, lp: 190, color: 'pink' }); addNoise(out, 0.015, { dur: 0.12, amp: 0.3, att: 0.01, dec: 0.04, sweep: [450, 1100, 3] });
+        addNoise(out, 0, { dur: 0.18, amp: 0.4, att: 0.015, dec: 0.055, bp: [3000, 0.7] }); addGrains(out, 0.005, 0.12, 36, [[3200, 0.0012, 0.6], [5200, 0.0008, 0.5]], 0.45);
+        for (let k = 0; k < 3; k++) D.bubble(out, D.n(rr(0.01, 0.1)), rlog(900, 2600), rr(0.003, 0.008), 0.1, 0.3);
+      } else { addNoise(out, 0, { dur: 0.16, amp: 0.4, att: 0.012, dec: 0.05, bp: [3300, 0.7] }); addGrains(out, 0.01, 0.1, 26, [[3400, 0.0012, 0.6], [5600, 0.0008, 0.5]], 0.4); addNoise(out, 0, { dur: 0.06, amp: 0.25, att: 0.005, dec: 0.02, lp: 220, color: 'pink' }); }
       break;
     }
-    case 'gravel': {
+    case 'mud': {         // squelch in, then the suction as the sole pulls free
+      if (heel) {
+        addNoise(out, 0, { dur: 0.08, amp: 0.6, att: 0.004, dec: 0.03, lp: 200, color: 'pink' }); addNoise(out, 0.01, { dur: 0.2, amp: 0.6, att: 0.02, dec: 0.07, sweep: [320, 950, 4.5], am: 60 });
+        for (let k = 0; k < 3; k++) D.bubble(out, D.n(rr(0.03, 0.18)), rlog(250, 700), rr(0.01, 0.03), 0.25, 0.3);
+      } else {
+        addNoise(out, 0, { dur: 0.22, amp: 0.5, att: 0.03, dec: 0.06, sweep: [950, 360, 4], am: 45 });
+        for (let k = 0; k < 2; k++) D.bubble(out, D.n(rr(0.08, 0.2)), rlog(280, 650), rr(0.012, 0.03), 0.3, 0.25);
+        addNoise(out, 0.16, { dur: 0.03, amp: 0.3, att: 0.001, dec: 0.006, bp: [1200, 1] });
+      }
+      break;
+    }
+    case 'gravel': {      // crunch on landing, a longer grind as the foot rolls
       const gm = [[1700, 0.0015, 0.6], [2900, 0.001, 0.7], [4600, 0.0007, 0.55], [6500, 0.0005, 0.35]];
-      addGrains(out, 0, 0.14, 170, gm, 1, 'decay');
-      addGrains(out, toe, 0.12, 90, gm, 0.7, 'decay');
-      addNoise(out, 0, { dur: 0.06, amp: 0.35, att: 0.003, dec: 0.02, lp: 220, color: 'pink' });
+      if (heel) { addGrains(out, 0, 0.14, 170, gm, 1, 'decay'); addNoise(out, 0, { dur: 0.06, amp: 0.35, att: 0.003, dec: 0.02, lp: 220, color: 'pink' }); }
+      else { addGrains(out, 0, 0.17, 120, gm, 0.8); addNoise(out, 0, { dur: 0.15, amp: 0.1, att: 0.02, dec: 0.05, bp: [2500, 0.7], am: 120 }); }
       break;
     }
-    case 'stone': {
-      const m = [[620 * J(), 0.011, 0.5], [1450 * J(), 0.006, 0.45], [2700 * J(), 0.0035, 0.3]];
-      strike(out, 0, m, 1, 0.0008);
-      addNoise(out, 0, { dur: 0.06, amp: 0.45, att: 0.002, dec: 0.018, lp: 250, color: 'pink' });
-      addGrains(out, 0.003, 0.06, 15, [[3500, 0.0008, 0.5], [5500, 0.0006, 0.4]], 0.35, 'decay');
-      addNoise(out, 0.004, { dur: 0.08, amp: 0.22, att: 0.003, dec: 0.02, bp: [1500, 1] });
-      strike(out, toe * 0.85, m, rr(0.3, 0.5), 0.0008);
+    case 'water': {       // puddle: splash, spray and bubbles
+      if (heel) {
+        addNoise(out, 0, { dur: 0.12, amp: 0.7, att: 0.003, dec: 0.04, bp: [900, 0.7] }); addNoise(out, 0.01, { dur: 0.26, amp: 0.35, att: 0.01, dec: 0.08, hp: 2500 });
+        for (let k = 0; k < 7; k++) D.bubble(out, D.n(rr(0.01, 0.2)), rlog(400, 1800), rr(0.005, 0.02), 0.3, 0.4);
+        addThump(out, 0, 160, 220, 0.04, 0.3);
+      } else { addNoise(out, 0, { dur: 0.18, amp: 0.45, att: 0.02, dec: 0.05, bp: [1300, 0.8] }); for (let k = 0; k < 5; k++) D.bubble(out, D.n(rr(0.03, 0.25)), rlog(600, 2200), rr(0.004, 0.014), 0.25, 0.4); }
       break;
     }
-    case 'water': {
-      addNoise(out, 0, { dur: 0.12, amp: 0.7, att: 0.003, dec: 0.04, bp: [900, 0.7] });
-      addNoise(out, 0.01, { dur: 0.3, amp: 0.35, att: 0.01, dec: 0.09, hp: 2500 });
-      for (let k = 0; k < 8; k++) D.bubble(out, D.n(rr(0.01, 0.22)), rlog(400, 1800), rr(0.005, 0.02), 0.3, 0.4);
-      addThump(out, 0, 160, 220, 0.04, 0.3);
-      break;
-    }
-    default: return rStep('wood', seed);
+    default: return rStep('wood', part, seed);
   }
   return fin(out);
 }
 for (const s of ['wood', 'stairs', 'tile', 'rug', 'carpet', 'porch', 'grass', 'mud', 'gravel', 'stone', 'water']) {
-  for (let k = 0; k < STEP_VARIANTS; k++) RENDER[`step_${s}_${k}`] = () => rStep(s, 1000 + s.length * 97 + k * 13 + s.charCodeAt(0));
+  for (let k = 0; k < STEP_VARIANTS; k++) {
+    const sd = 1000 + s.length * 97 + k * 13 + s.charCodeAt(0);
+    RENDER[`stepH_${s}_${k}`] = () => at(32000, () => rStep(s, 'h', sd));
+    RENDER[`stepT_${s}_${k}`] = () => at(32000, () => rStep(s, 't', sd + 7919));
+  }
 }
+// footstep overlays: wet rubber soles squeaking on smooth floors, a thin film of water on wet ground, jacket rustle
+for (let k = 0; k < 4; k++) {
+  RENDER['squeak' + k] = () => at(32000, () => {
+    srand(900 + k); const f = rr(850, 1500);
+    return fin(creakSig({ dur: rr(0.06, 0.14), rates: [[0, f], [0.5, f * rr(1.1, 1.35)], [1, f * rr(0.85, 1.05)]], jit: 0.03,
+      amp: [[0, 0], [0.2, 1], [0.8, 0.7], [1, 0]], modes: [[rr(2000, 2600), 0.003, 0.6], [rr(3300, 3900), 0.002, 0.45], [rr(5000, 5800), 0.0015, 0.25]] }));
+  });
+  RENDER['wet' + k] = () => at(32000, () => {
+    srand(910 + k); const o = D.zeros(0.2);
+    addNoise(o, 0, { dur: rr(0.04, 0.08), amp: 1, att: 0.001, dec: 0.012, hp: rr(1200, 2000) });
+    for (let j = 0; j < 3; j++) D.bubble(o, D.n(rr(0.004, 0.05)), rlog(1400, 4200), rr(0.002, 0.006), 0.3, 0.3);
+    return fin(o);
+  });
+  RENDER['cloth' + k] = () => at(24000, () => {
+    srand(920 + k); const o = D.zeros(0.35);
+    addNoise(o, 0, { dur: rr(0.12, 0.25), amp: 1, shape: u => Math.pow(Math.sin(Math.PI * u), 1.4), bp: [rr(2200, 3800), 0.6], am: rr(60, 130) });
+    addNoise(o, 0.01, { dur: 0.15, amp: 0.3, shape: u => Math.sin(Math.PI * u), hp: 5000, am: 200 });
+    return fin(o);
+  });
+}
+// creaks: individual floorboards / stair treads (the engine picks one per board, deterministically), the porch rocker,
+// the house frame straining in gusts, a loose pane rattling when thunder hits
+for (let k = 0; k < 6; k++) RENDER['board' + k] = () => at(32000, () => {
+  srand(430 + k); const lo = rr(22, 40), hi = lo * rr(1.6, 2.6);
+  return fin(creakSig({ dur: rr(0.22, 0.6), rates: [[0, lo], [rr(0.35, 0.65), hi], [1, lo * rr(0.8, 1.1)]], jit: rr(0.15, 0.3), skip: 0.06,
+    amp: [[0, 0], [0.12, 1], [0.7, 0.75], [1, 0]], modes: [[rr(170, 280), 0.028, 0.6], [rr(360, 520), 0.016, 0.7], [rr(680, 950), 0.01, 0.5], [rr(1200, 1650), 0.007, 0.3], [rr(2100, 2700), 0.004, 0.15]] }));
+});
+for (let k = 0; k < 3; k++) RENDER['rocker' + k] = () => at(32000, () => {
+  srand(440 + k); const o = D.zeros(0.9);
+  mixAt(o, creakSig({ dur: rr(0.35, 0.6), rates: [[0, rr(35, 50)], [0.5, rr(70, 110)], [1, rr(35, 55)]], jit: 0.2, amp: [[0, 0], [0.15, 0.9], [0.75, 0.6], [1, 0]],
+    modes: [[rr(260, 340), 0.02, 0.6], [rr(560, 700), 0.014, 0.65], [rr(1050, 1300), 0.009, 0.45], [rr(1900, 2300), 0.005, 0.25]] }), rr(0.02, 0.08), 0.7);
+  strike(o, 0, [[rr(110, 140), 0.05, 0.6], [rr(240, 300), 0.03, 0.5], [rr(480, 600), 0.015, 0.3]], 0.35, 0.004);   // runners on the deck
+  return fin(o, 0.85);
+});
+for (let k = 0; k < 3; k++) RENDER['house_creak' + k] = () => at(24000, () => {
+  srand(450 + k); const lo = rr(9, 16);
+  return fin(creakSig({ dur: rr(0.7, 1.5), rates: [[0, lo], [rr(0.3, 0.6), lo * rr(2, 3.2)], [1, lo * rr(0.9, 1.3)]], jit: 0.3, skip: 0.1,
+    amp: [[0, 0], [0.2, 1], [0.6, 0.8], [1, 0]], modes: [[rr(85, 130), 0.05, 0.7], [rr(210, 300), 0.03, 0.6], [rr(430, 600), 0.018, 0.4], [rr(850, 1200), 0.01, 0.2]] }));
+});
+RENDER.rattle = () => at(32000, () => {
+  srand(460); const o = D.zeros(1.0);
+  mixAt(o, creakSig({ dur: 0.8, rates: [[0, 34], [0.5, 28], [1, 22]], jit: 0.35, skip: 0.1, amp: [[0, 0], [0.04, 1], [0.4, 0.5], [1, 0]],
+    modes: [[rr(380, 440), 0.012, 0.6], [rr(820, 940), 0.008, 0.5], [rr(1550, 1750), 0.005, 0.45], [rr(2700, 3100), 0.003, 0.3], [rr(4300, 4900), 0.002, 0.2]] }), 0, 1);
+  addThump(o, 0, 70, 45, 0.12, 0.5);
+  return fin(o, 0.85);
+});
 for (let k = 0; k < 3; k++) {
   RENDER['floor_creak' + k] = () => { srand(400 + k); return fin(creakSig({ dur: rr(0.3, 0.55), rates: [[0, rr(25, 40)], [0.5, rr(45, 80)], [1, rr(25, 40)]], jit: 0.25,
     amp: [[0, 0], [0.15, 1], [0.7, 0.7], [1, 0]], modes: [[rr(180, 260), 0.025, 0.6], [rr(380, 480), 0.015, 0.7], [rr(700, 900), 0.01, 0.5], [rr(1200, 1500), 0.007, 0.3]] })); };
@@ -8924,8 +9166,8 @@ Object.assign(RENDER, {
     mixAt(o, creakSig({ dur: 0.9, rates: [[0, 45], [0.3, 95], [0.6, 120], [1, 60]], jit: 0.2, amp: [[0, 0], [0.1, 1], [0.7, 0.7], [1, 0]], modes: DOOR_MODES }), 0.12, 0.55);
     addNoise(o, 0.1, { dur: 0.6, amp: 0.12, att: 0.15, dec: 0.2, lp: 500, color: 'pink' }); return fin(o); },
   door_close() { srand(505); const o = D.zeros(1.0);
-    addNoise(o, 0, { dur: 0.3, amp: 0.18, shape: u => Math.pow(u, 1.5), lp: 600, color: 'pink' });
-    const t = 0.25; addThump(o, t, 95, 65, 0.09, 0.8);
+    addNoise(o, 0, { dur: 0.36, amp: 0.18, shape: u => Math.pow(u, 1.5), lp: 600, color: 'pink' });
+    const t = 0.34; addThump(o, t, 95, 65, 0.09, 0.8);          // the leaf reaches the frame ~0.35 s into the swing
     strike(o, t, [[175, 0.06, 0.7], [340, 0.04, 0.6], [610, 0.025, 0.5], [1150, 0.012, 0.3], [2300, 0.005, 0.14]], 1, 0.002);
     addNoise(o, t, { dur: 0.08, amp: 0.3, dec: 0.015, lp: 1500 }); latch(o, t + 0.025, 0.7); return fin(o); },
   thud() { srand(506); const o = D.zeros(0.6); addThump(o, 0, 90, 55, 0.12, 1);
@@ -8999,6 +9241,14 @@ Object.assign(RENDER, {
     mixAt(o, creakSig({ dur: 0.9, rates: [[0, 180], [0.3, 320], [0.6, 420], [1, 260]], jit: 0.06, amp: [[0, 0], [0.1, 0.8], [0.5, 1], [0.85, 0.6], [1, 0]],
       modes: [[640, 0.03, 0.6], [1280, 0.02, 0.5], [1920, 0.012, 0.35], [2600, 0.008, 0.2]] }), 0.12, 0.45);
     return fin(o); },
+  // gate swinging shut: a shorter hinge squeak, then the latch bar clanking home as the gate meets the post
+  gate_close() { srand(521); const o = D.zeros(1.5);
+    mixAt(o, creakSig({ dur: 0.6, rates: [[0, 260], [0.5, 380], [1, 200]], jit: 0.06, amp: [[0, 0], [0.15, 0.7], [0.6, 0.9], [1, 0]],
+      modes: [[640, 0.03, 0.6], [1280, 0.02, 0.5], [1920, 0.012, 0.35], [2600, 0.008, 0.2]] }), 0.05, 0.4);
+    strike(o, 0.72, [[950, 0.07, 0.6], [1730, 0.045, 0.5], [2900, 0.03, 0.4], [4300, 0.018, 0.25]], 1, 0.0008);
+    strike(o, 0.76, [[1100, 0.04, 0.4], [2400, 0.02, 0.3]], 0.45, 0.0005);
+    addThump(o, 0.72, 120, 80, 0.05, 0.35);
+    return fin(o); },
   cushion() { srand(519); const o = D.zeros(0.55);
     addNoise(o, 0, { dur: 0.5, amp: 1, att: 0.03, dec: 0.12, lp: 260, color: 'pink' });
     addNoise(o, 0.01, { dur: 0.4, amp: 0.18, att: 0.04, dec: 0.1, bp: [2200, 0.6], am: 50 }); return fin(o); },
@@ -9007,58 +9257,88 @@ Object.assign(RENDER, {
     addNoise(o, 0, { dur: 0.8, amp: 0.12, att: 0.02, dec: 0.3, hp: 1500, color: 'pink' }); return fin(o, 0.6); },
 });
 
-// ---- thunder (pre-rendered variants; mid/far at 24 kHz since they are band-limited anyway) ----
-function rThunder(kind, seed) {
-  const saveSR = SR, sr = kind === 'close' ? SR : Math.min(SR, 24000);
-  SR = sr; srand(seed);
+// ---- thunder, physically inspired: a tortuous channel (random walk up to the cloud base plus long in-cloud
+// branches) whose 12 m segments each radiate an N-wave, mostly broadside (loud claps where the channel runs across
+// the line of sight). Arrivals spread by path length at 343 m/s with 1/r spreading; each distance band gets its own
+// air-absorption low-pass (the tearing crack only survives close by); 1-4 return strokes re-excite the main channel;
+// echoes off the surrounding hills keep it rolling. p = { d: km, s: strength 0..1, seed } → { ch, sr, lead } where
+// lead = travel time of the first arrival (s).
+function rThunder(p) {
+  const saveSR = SR, dKm = clamp(+p.d || 2, 0.2, 12), s = clamp(p.s === undefined ? 0.7 : +p.s, 0, 1);
+  SR = Math.min(SR, dKm < 1.6 ? 32000 : 22050); srand((p.seed >>> 0) || 1);
   try {
-    const dur = kind === 'close' ? 7.5 : kind === 'mid' ? 8 : 9, n = D.n(dur), env = new Float32Array(n);
-    const swells = kind === 'close' ? 5 : 4 + ((R() * 3) | 0);
-    for (let s = 0; s < swells; s++) {
-      const t0 = s === 0 ? (kind === 'close' ? 0.05 : 0) : rr(0.2, dur * 0.45), amp = s === 0 ? 1 : rr(0.35, 0.9);
-      const att = kind === 'far' ? rr(0.25, 0.6) : rr(0.03, 0.2), dec = rr(0.8, 2.2) * (kind === 'far' ? 1.4 : 1);
-      for (let i = D.n(t0); i < n; i++) { const t = i / SR - t0; env[i] += amp * (1 - Math.exp(-t / att)) * Math.exp(-t / dec); }
+    const c = 343, L = 12, EAR = 1.6, seg = [];
+    let x = dKm * 1000, y = 0, z = 0, dx = rs1() * 0.3, dy = 1, dz = rs1() * 0.3;
+    const top = rr(1300, 2800);
+    while (y < top && seg.length < 400 * 8) {
+      dx += rs1() * 0.5; dy += rs1() * 0.5 + 0.25; dz += rs1() * 0.5;
+      let l = Math.hypot(dx, dy, dz) || 1; dx /= l; dy /= l; dz /= l;
+      if (dy < 0.2) { dy = 0.2; l = Math.hypot(dx, dy, dz); dx /= l; dy /= l; dz /= l; }
+      x += dx * L; y += dy * L; z += dz * L;
+      seg.push(x, y, z, dx, dy, dz, y < 400 ? 1.6 : 1, 1);   // position, direction, energy, main channel (hottest near the ground)
     }
-    const lpF = kind === 'close' ? 700 : kind === 'mid' ? 420 : 230, chs = [];
-    const mod = D.curve(n, Math.round(dur * 6), 0.55, 1);
-    for (let c = 0; c < 2; c++) {
-      const x = D.brown(n); D.biquad(x, 'lowpass', lpF, 0.6); D.biquad(x, 'lowpass', lpF * 1.3, 0.6); D.biquad(x, 'highpass', 28, 0.7);
-      D.normRms([x], 1);
-      for (let i = 0; i < n; i++) x[i] *= env[i] * mod[i];
-      if (kind !== 'far') {                                           // mid-frequency rumble texture
-        const m = D.white(n); D.biquad(m, 'bandpass', kind === 'close' ? 900 : 500, 0.7); D.normRms([m], 1);
-        const cm = D.curve(n, Math.round(dur * 20), 0, 1);
-        for (let i = 0; i < n; i++) x[i] += m[i] * env[i] * cm[i] * cm[i] * (kind === 'close' ? 0.35 : 0.18);
+    for (let b = 0, nb = 2 + ((R() * 3) | 0); b < nb; b++) {
+      const a0 = R() * TAU, len = rr(1200, 4500) * (0.6 + 0.4 * s), e = rr(0.2, 0.45);
+      let bx = x, by = y, bz = z, hx = Math.cos(a0), hy = rs1() * 0.15, hz = Math.sin(a0);
+      for (let t = 0; t < len; t += L) {
+        hx += rs1() * 0.4; hy += rs1() * 0.3 - hy * 0.2; hz += rs1() * 0.4;
+        const l = Math.hypot(hx, hy, hz) || 1; hx /= l; hy /= l; hz /= l;
+        bx += hx * L; by = Math.max(top * 0.7, by + hy * L); bz += hz * L;
+        seg.push(bx, by, bz, hx, hy, hz, e * Math.exp(-1.6 * t / len), 0);   // branches fade out along their length
       }
-      if (kind === 'close') {                                         // the crack: a ripping burst of short N-wave crackles
-        const ck = new Float32Array(n);
-        let t = 0;
-        for (let k = 0; k < 45; k++) {
-          t += -Math.log(1 - R()) * 0.012; if (t > 0.6) break;
-          const bl = D.n(rr(0.002, 0.015)), i0 = D.n(t), a = Math.exp(-t / 0.25) * rr(0.4, 1);
-          for (let j = 0; j < bl && i0 + j < n; j++) ck[i0 + j] += rs1() * a * (1 - j / bl);
+    }
+    const ns = seg.length / 8, dist = new Float32Array(ns);
+    let rMin = Infinity, rMax = 0;
+    for (let i = 0; i < ns; i++) { const k = i * 8, r = Math.hypot(seg[k], seg[k + 1] - EAR, seg[k + 2]); dist[i] = r; if (r < rMin) rMin = r; if (r > rMax) rMax = r; }
+    const strokes = 1 + Math.min(3, Math.floor(s * 3.2 + R() * 1.2)), off = [0];
+    for (let k = 1; k < strokes; k++) off.push(off[k - 1] + rr(0.035, 0.11));
+    const ECHO = 3.2, dur = Math.min(16, (rMax - rMin) / c + off[strokes - 1] + ECHO + 0.5), n = D.n(dur);
+    const NB = 7, lr0 = Math.log(rMin), lr1 = Math.log(rMax + 1), band = new Uint8Array(ns);
+    for (let i = 0; i < ns; i++) band[i] = Math.min(NB - 1, Math.floor((Math.log(dist[i]) - lr0) / (lr1 - lr0 + 1e-9) * NB));
+    const OL = new Float32Array(n), OR = new Float32Array(n), BL = new Float32Array(n), BR = new Float32Array(n);
+    for (let b = 0; b < NB; b++) {
+      BL.fill(0); BR.fill(0);
+      for (let i = 0; i < ns; i++) {
+        if (band[i] !== b) continue;
+        const k = i * 8, r = dist[i], ux = seg[k] / r, uy = (seg[k + 1] - EAR) / r, uz = seg[k + 2] / r;
+        const ct = ux * seg[k + 3] + uy * seg[k + 4] + uz * seg[k + 5], s2 = 1 - ct * ct;
+        const amp = seg[k + 6] * (0.12 + 0.88 * s2 * s2 * s2) * (1000 / r) * rr(0.5, 1.5);
+        const pan = clamp(Math.atan2(seg[k + 2], seg[k]) / 0.9, -1, 1) * 0.5 + 0.5, gl = Math.cos(pan * 1.5708), gr = Math.sin(pan * 1.5708);
+        // N-wave lengthens with range; the channel's lowest few hundred metres (return stroke) snaps shortest → the crack
+        const tl = Math.max(3, Math.round((seg[k + 1] < 400 && seg[k + 7] ? rr(0.0015, 0.005) : rr(0.004, 0.011)) * Math.pow(r / 1000, 0.25) * SR));
+        for (let st = 0, m = seg[k + 7] ? strokes : 1; st < m; st++) {
+          const i0 = Math.round(((r - rMin) / c + off[st]) * SR), a = amp * (st ? rr(0.35, 0.75) : 1);
+          if (i0 + tl >= n) continue;
+          for (let j = 0; j < tl; j++) { const v = a * (1 - 2 * j / tl); BL[i0 + j] += v * gl; BR[i0 + j] += v * gr; }
         }
-        D.biquad(ck, 'highpass', 700, 0.7); D.biquad(ck, 'lowpass', 6500, 0.7);
-        const rip = D.white(D.n(0.4)); D.tv(rip, 'lowpass', u => 6000 * Math.pow(800 / 6000, u), 0.7);
-        for (let i = 0; i < rip.length; i++) ck[i] += rip[i] * Math.exp(-i / SR / 0.1) * 0.8;
-        D.normRms([ck], 1);
-        for (let i = 0; i < n; i++) x[i] += ck[i] * 0.6;
       }
-      chs.push(x);
+      const rb = Math.exp(lr0 + (b + 0.5) / NB * (lr1 - lr0)), fc = clamp(1700 * Math.pow(1000 / rb, 1.0), 120, SR * 0.42);
+      for (const [src, dst] of [[BL, OL], [BR, OR]]) {
+        D.biquad(src, 'lowpass', fc, 0.6); D.biquad(src, 'lowpass', fc * 1.4, 0.6);
+        for (let i = 0; i < n; i++) dst[i] += src[i];
+      }
     }
-    D.fadeOut(chs[0], 0.3); D.fadeOut(chs[1], 0.3);
-    if (kind !== 'far') {                 // gentle saturation: lowers the crest factor so the rumble body carries
-      D.normPeak(chs, 1); const k = kind === 'close' ? 2.4 : 1.6, nk = Math.tanh(k);
-      for (const x of chs) for (let i = 0; i < x.length; i++) x[i] = Math.tanh(k * x[i]) / nk;
+    const dkL = OL.slice(), dkR = OR.slice();                // landscape echoes: dark, delayed, scattered L/R
+    for (const q of [dkL, dkR]) { D.biquad(q, 'lowpass', 420, 0.6); D.biquad(q, 'lowpass', 600, 0.6); }
+    for (let k = 0, taps = 10 + ((R() * 6) | 0); k < taps; k++) {
+      const dt = 0.25 + Math.pow(R(), 0.8) * ECHO, g = 0.34 * Math.exp(-dt / 1.6) * rr(0.5, 1.1), sL = D.n(dt), sR = D.n(dt + rr(0.004, 0.03));
+      const gL = R() < 0.5 ? g : g * 0.45, gR = g * 1.45 - gL;
+      for (let i = sL; i < n; i++) OL[i] += dkL[i - sL] * gL;
+      for (let i = sR; i < n; i++) OR[i] += dkR[i - sR] * gR;
     }
+    const chs = [OL, OR];
+    for (const q of chs) { D.biquad(q, 'highpass', 24, 0.7); D.fadeOut(q, 0.4); }
+    D.normPeak(chs, 1);                                      // gentle saturation: the rumble body carries, the crack keeps its bite
+    const kS = 1.3, nk = Math.tanh(kS);
+    for (const q of chs) for (let i = 0; i < q.length; i++) q[i] = Math.tanh(kS * q[i]) / nk;
     D.normPeak(chs, 0.9);
-    return { ch: chs, sr };
+    return { ch: chs, sr: SR, lead: rMin / c };
   } finally { SR = saveSR; }
 }
-RENDER.thunderClose = () => rThunder('close', 601);
-RENDER.thunderMid = () => rThunder('mid', 602);
-RENDER.thunderFar1 = () => rThunder('far', 603);
-RENDER.thunderFar2 = () => rThunder('far', 604);
+RENDER.thunderClose = () => rThunder({ d: 0.6, s: 1, seed: 601 });
+RENDER.thunderMid = () => rThunder({ d: 2.0, s: 0.75, seed: 602 });
+RENDER.thunderFar1 = () => rThunder({ d: 4.0, s: 0.6, seed: 603 });
+RENDER.thunderFar2 = () => rThunder({ d: 5.5, s: 0.5, seed: 604 });
 
 // ---- music instruments (sampled every 3 semitones, pitch-shifted by playbackRate) ----
 const RH_BASES = [], BS_BASES = [];
@@ -9112,11 +9392,12 @@ Object.assign(RENDER, {
 });
 
 function render(name) {
+  if (name.startsWith('thunder|')) { const q = name.split('|'); return rThunder({ d: +q[1], s: +q[2], seed: +q[3] }); }
   const f = RENDER[name]; if (!f) return null;
   const save = SR;
   try { const r = f(); return Array.isArray(r) ? { ch: r, sr: SR } : r; } finally { SR = save; }
 }
-return { render, has: name => !!RENDER[name] };
+return { render, has: name => !!RENDER[name] || name.startsWith('thunder|'), names: () => Object.keys(RENDER) };
 } // ================================================ end DSPLIB ========================================================
 
 const RH_BASES = [], BS_BASES = [];
@@ -9151,21 +9432,47 @@ const COMP = [
 let A = null;                // === C.audio (the object core created)
 let ctx = null;
 const BUF = Object.create(null);
+const META = Object.create(null);     // extras from the renderer (thunder: travel time of the first arrival)
 const G = {};                // group gains
-let master, busMusic, busAmb, busSfx, duckG, duckLP, comp, limiter, shaper, muteG, revSend, revRet, convolver;
+const GS = { in: {}, out: {} }, BS = { in: {}, out: {} };  // reverb send taps per group (follow solo) and per bus (follow volume)
+const RV = { roomWet: 1 };   // reverbs: indoor room + open air, their returns, the listener-space send
+let master, busMusic, busAmb, busSfx, duckG, duckLP, comp, limiter, shaper, muteG;
 let tap = null, tapBuf = null;
 const layers = {};
 const emitters = [];
 const occChains = [];
+const lines = [];            // line / plane sources whose emitter follows the nearest point to the listener
 const pendingLoops = new Set();
 const liveLoops = new Set();
 let listenerCam = null;
 let stepPanL = null, stepPanR = null, stepSide = false, lastStepT = 0;
 let dropPans = null;
 let started = false;
-let fireEvt = 1, fireS = 0, windT = 0, rainEvt = null;
+let fireEvt = 1, fireS = 0, rainEvt = null;
+const FIRE = { act: 0.5, actT: 0, nextSettle: 30, lvl: -1 };
+const WET = { ground: -1, shoe: 0 };  // ground wetness (runoff, lags the rain) and how wet the player's shoes are
+const GUST = { t: 0, W: 0.4, g: 0.5, env: 0.55, avg: -1, dx: 0.92, dz: 0.39 };
+const STEP = { pos: null };
+const ROCK = { on: false, prev: null, dir: 0, last: 0 };
+const present = { fire: false, clock: false, t: -9 };
+const recent = new Map();    // one-shot de-duplication (same sound, same place, same instant)
+let houseCreakT = 0, gustHigh = false;
 const doorState = { front: false };
 const DOORWAY = [3.75, 1.1, 4.95];
+// window panes (SPEC §4.6): centre just inside the glass, outward normal [x, z], size → ref distance; the hall
+// window sits under the porch roof and stays mostly dry
+const WINDOWS = [
+  { p: [-3.9, 1.43, 4.62], n: [0, 1], ref: 1.3 }, { p: [-6.62, 1.6, 1.05], n: [-1, 0], ref: 0.8 }, { p: [-6.62, 1.6, 3.95], n: [-1, 0], ref: 0.8 },
+  { p: [-3.6, 1.65, -4.62], n: [0, -1], ref: 0.9 }, { p: [-6.62, 1.55, -1.6], n: [-1, 0], ref: 1.0 }, { p: [4.3, 1.55, -4.62], n: [0, -1], ref: 1.2 },
+  { p: [6.62, 1.55, -3.0], n: [1, 0], ref: 1.0 }, { p: [2.65, 1.5, 4.62], n: [0, 1], ref: 0.8, shelter: 0.25 },
+  { p: [6.62, 4.45, -1.9], n: [1, 0], ref: 1.0 }, { p: [-6.62, 5.1, 0], n: [-1, 0], ref: 0.8 },
+];
+const SKYLIGHTS = [[-5.45, 1.75], [-2.85, 1.75], [4.25, -1.75]];
+const DOWNSPOUTS = [[-7.1, 5.15], [7.1, 5.15], [-7.1, -5.15], [7.1, -5.15]];
+const DRIPLINES = [{ x0: -7.4, x1: 1.0, y: -0.4, z: 5.75 }, { x0: -7.4, x1: 7.4, y: -0.4, z: -5.75 }, { x0: 1.0, x1: 7.0, y: -0.3, z: 7.55 }];
+const TREES = [{ p: [-6.5, 3.6, 14], ref: 3.5 }, { p: [11, 3.4, 12], ref: 3.0 }];
+const POND = [-9, -0.35, 9.5];
+const ROOM_WET = { living: 0.9, kitchen: 1.15, hall: 1.2, study: 0.8, stairs: 1.25, loft: 0.95 };
 const L = { x: 0.4, y: 1.62, z: 2, fx: 0, fy: 0, fz: -1, H: 1, U: 0, P: 0, leak: 0, front: 0, rain: 0.7 };
 const stats = { voices: 0, peakVoices: 0, created: 0, loops: 0, updMs: 0, updN: 0, updMax: 0, renderMs: 0, renders: 0, mainRenders: 0, workerRenders: 0, rt: {} };
 const MAX_VOICES = 90;
@@ -9187,7 +9494,7 @@ function mkBuffer(res) {
   return b;
 }
 function deliver(name, res) {
-  if (!BUF[name] && res && res.ch && res.ch.length) BUF[name] = mkBuffer(res);
+  if (!BUF[name] && res && res.ch && res.ch.length) { BUF[name] = mkBuffer(res); if (res.lead !== undefined) META[name] = { lead: res.lead }; }
   const w = waiters[name];
   if (w) { delete waiters[name]; const b = BUF[name] || null; for (const cb of w) { try { cb(b); } catch (e) { C.log('audio', 'buffer callback failed', e); } } }
 }
@@ -9234,7 +9541,7 @@ function startWorker() {
     const src = `'use strict';const LIB=(${DSPLIB.toString()})(${SR});const Q=[],done=new Set();let busy=false;
 function pump(){busy=false;const name=Q.shift();if(name!==undefined&&!done.has(name)){done.add(name);let r=null,err=null;
 try{r=LIB.render(name);}catch(e){err=String((e&&e.message)||e);}
-if(r)self.postMessage({name,ch:r.ch,sr:r.sr},r.ch.map(c=>c.buffer));else self.postMessage({name,error:err||'unknown'});}
+if(r)self.postMessage({name,ch:r.ch,sr:r.sr,lead:r.lead},r.ch.map(c=>c.buffer));else self.postMessage({name,error:err||'unknown'});}
 if(Q.length){busy=true;setTimeout(pump,0);}}
 self.onmessage=e=>{const d=e.data||{};const ns=(d.names||[]).filter(n=>!done.has(n));if(d.front)Q.unshift(...ns);else Q.push(...ns);if(!busy&&Q.length){busy=true;setTimeout(pump,0);}};`;
     const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
@@ -9272,9 +9579,12 @@ function setPannerPos(p, x, y, z) {
 const inHouse = (x, y, z) => x > -6.75 && x < 6.75 && z > -4.75 && z < 4.75 && y < 8;
 
 // ---------------------------------------------------------------------------------------------------------------------
-// emitters: positional sources with a simple wall/floor occlusion model
+// emitters: positional sources with wall/floor occlusion, gentle air damping with range, and a reverb send
+// (post-occlusion, pre-distance) into the space they are in
 // ---------------------------------------------------------------------------------------------------------------------
+const OCC_CUT = 0.035, OCC_LOSS = 0.62;              // fully behind a wall: low-pass ≈ 700 Hz and −8.4 dB
 function occAmount(e) {
+  if (e.edge) return L.U * 0.6 * L.H;                 // in a doorway: open to both sides (ground floor)
   let m;
   if (e.inH) {
     m = (1 - L.H) * (1 - 0.7 * L.leak);
@@ -9282,39 +9592,57 @@ function occAmount(e) {
   } else m = L.H * (1 - 0.7 * L.leak);
   return m;
 }
-function applyOcc(fNode, gNode, m, tau = 0.08, loss = 0.55, cutK = 0.04) {
-  setP(fNode.frequency, 20000 * Math.pow(cutK, m), tau);    // default 20 kHz → 800 Hz
-  setP(gNode.gain, 1 - loss * m, tau);
+const occCut = (m, d) => 20000 * Math.pow(OCC_CUT, m) / (1 + d / 40);
+function applyOcc(e, m, d) {
+  setP(e.occ.frequency, occCut(m, d), 0.08);
+  setP(e.occG.gain, 1 - OCC_LOSS * m, 0.08);
+}
+// the reverberant level hardly falls with distance inside a room (the direct sound does), a bit more outdoors
+function revAmount(e, d) { return e.rev * (e.space === 'out' ? 1 / (1 + d / 14) : 1 / (1 + d / 6)); }
+function routeSend(e) {
+  const sp = e.edge ? 'edge' : e.inH ? 'in' : 'out';
+  if (sp === e.space) return;
+  try { e.send.disconnect(); } catch (err) { /* not connected yet */ }
+  e.space = sp;
+  if (sp !== 'out') e.send.connect(GS.in[e.group] || GS.in.sfx);
+  if (sp !== 'in') e.send.connect(GS.out[e.group] || GS.out.sfx);
 }
 function makeEmitter(o) {
-  const e = { x: o.x || 0, y: o.y || 0, z: o.z || 0, input: gainNode(1), occ: filt('lowpass', 20000, 0.5), occG: gainNode(1),
-    panner: ctx.createPanner(), out: o.out || G[o.group || 'sfx'], follow: !!o.follow, persistent: o.persistent !== false };
+  const group = o.group || 'sfx';
+  const e = { x: o.x || 0, y: o.y || 0, z: o.z || 0, input: gainNode(1), occ: filt('lowpass', 20000, 0.5), occG: gainNode(1), send: gainNode(0),
+    panner: ctx.createPanner(), out: o.out || G[group], group, follow: !!o.follow, persistent: o.persistent !== false,
+    edge: !!o.edge, rev: o.rev === undefined ? 1 : o.rev, space: null };
   const p = e.panner;
   p.panningModel = o.model || 'HRTF'; p.distanceModel = 'inverse';
   p.refDistance = o.ref || 1; p.rolloffFactor = o.rolloff === undefined ? 1 : o.rolloff; p.maxDistance = o.max || 100;
-  e.input.connect(e.occ); e.occ.connect(e.occG); e.occG.connect(p); p.connect(e.out);
+  e.input.connect(e.occ); e.occ.connect(e.occG); e.occG.connect(p); p.connect(e.out); e.occG.connect(e.send);
   e.setPosition = (x, y, z) => {
     if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
-    e.x = x; e.y = y; e.z = z; setPannerPos(p, x, y, z); e.inH = inHouse(x, y, z); e.up = e.inH && y > 2.9;
+    e.x = x; e.y = y; e.z = z; setPannerPos(p, x, y, z); e.inH = inHouse(x, y, z); e.up = e.inH && y > 2.9; routeSend(e);
   };
   e.setPosition(e.x, e.y, e.z);
-  const m = occAmount(e);
-  e.occ.frequency.value = e.occ.frequency._v = 20000 * Math.pow(0.04, m);
-  e.occG.gain.value = e.occG.gain._v = 1 - 0.55 * m;
+  const m = occAmount(e), d = Math.hypot(e.x - L.x, e.y - L.y, e.z - L.z);
+  e.occ.frequency.value = e.occ.frequency._v = occCut(m, d);
+  e.occG.gain.value = e.occG.gain._v = 1 - OCC_LOSS * m;
+  e.send.gain.value = e.send.gain._v = revAmount(e, d);
   e.dispose = () => {
     if (e.dead) return; e.dead = true;
-    for (const nd of [e.input, e.occ, e.occG, p]) { try { nd.disconnect(); } catch (err) { /* already */ } }
+    for (const nd of [e.input, e.occ, e.occG, e.send, p]) { try { nd.disconnect(); } catch (err) { /* already */ } }
     const i = emitters.indexOf(e); if (i >= 0) emitters.splice(i, 1);
   };
   if (e.persistent) emitters.push(e);
   return e;
 }
-function makeOccChain(dest, loss = 0.55, cutK = 0.04) {
-  const oc = { f: filt('lowpass', 20000, 0.5), g: gainNode(1), loss, cutK };
+// shared occlusion for non-positional layers; `inside`: the source is indoors (muffled when the listener is outside)
+function makeOccChain(dest, loss = 0.55, cutK = 0.04, inside = false) {
+  const oc = { f: filt('lowpass', 20000, 0.5), g: gainNode(1), loss, cutK, inside };
   oc.f.connect(oc.g); oc.g.connect(dest); oc.input = oc.f;
   occChains.push(oc);
   return oc;
 }
+// a source spread along a line (drip line, pine row) or over a plane (roof slope): its emitter sits at the point of
+// the source nearest to the listener
+function lineSource(em, fn) { const ln = { em, fn, pt: [0, 0, 0] }; lines.push(ln); fn(ln.pt); em.setPosition(ln.pt[0], ln.pt[1], ln.pt[2]); return ln; }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // voices (one-shot buffer sources with automatic cleanup + live counter)
@@ -9329,11 +9657,13 @@ function voice(buf, o = {}) {
   src.connect(g);
   let pan = null, em = null;
   if (o.pos) {
-    em = makeEmitter({ x: o.pos[0], y: o.pos[1], z: o.pos[2], out: o.out || G[o.group || 'sfx'], ref: o.ref || 1.2, rolloff: o.rolloff || 1, persistent: false });
+    em = makeEmitter({ x: o.pos[0], y: o.pos[1], z: o.pos[2], group: o.group || 'sfx', out: o.out, ref: o.ref || 1.2, rolloff: o.rolloff || 1, persistent: false,
+      edge: o.edge, rev: o.rev, model: o.model });
     g.connect(em.input);
   } else if (typeof o.pan === 'number') {
     pan = ctx.createStereoPanner(); pan.pan.value = clamp(o.pan, -1, 1); g.connect(pan); pan.connect(o.out || G[o.group || 'sfx']);
   } else g.connect(o.out || G[o.group || 'sfx']);
+  if (!o.pos && o.ls) (pan || g).connect(RV.ls);         // non-positional: reverberates in the listener's own space
   const when = Math.max(o.when || 0, ctx.currentTime);
   src.start(when, o.offset || 0);
   if (o.dur) src.stop(when + o.dur);
@@ -9368,26 +9698,31 @@ function posOf(o) { return o && isFinite(o.x) && isFinite(o.y) && isFinite(o.z) 
 // public API implementations
 // ---------------------------------------------------------------------------------------------------------------------
 const ALIAS = { door_creak: 'creak', knock: 'thud', bell: 'chime', lamp: 'switch', paper: 'page', book: 'page', cup: 'clink', glass: 'clink',
-  latch: 'click', squeak: 'creak', fwoosh: 'whoosh', cat: 'meow', water: 'splash', drop: 'drop0', pop: 'pop0' };
+  latch: 'click', squeak: 'creak', fwoosh: 'whoosh', cat: 'meow', water: 'splash', drop: 'drop0', pop: 'pop0', gate_open: 'gate', crackle: 'crk0',
+  rocker: 'rocker0', board: 'board0', settle: 'settle0', rattle_window: 'rattle' };
 function play(name, opts = {}) {
   if (!ctx || !name) return null;
   let n = ALIAS[name] || name;
   if (n === 'floor_creak') n = 'floor_creak' + ((Math.random() * 3) | 0);
-  if (n.startsWith('step_') && !hasSound(n)) n = `step_${SURF[n.slice(5)] || 'wood'}_${(Math.random() * STEP_VARIANTS) | 0}`;
+  if (n.startsWith('step_')) n = `stepH_${SURF[n.slice(5).replace(/_\d+$/, '')] || 'wood'}_${(Math.random() * STEP_VARIANTS) | 0}`;
   const buf = getBuf(n);
   if (!buf) { C.log('audio', 'unknown sound ' + name); return null; }
+  const pos = posOf(opts), now = ctx.currentTime, last = recent.get(n);
+  // the same sound at the same spot within a few ms is one event reported twice (e.g. a lamp event + a direct call)
+  if (last && now - last.t < 0.06 && (!pos || !last.pos || Math.hypot(pos[0] - last.pos[0], pos[1] - last.pos[1], pos[2] - last.pos[2]) < 0.8)) return null;
+  recent.set(n, { t: now, pos });
   const base = SFX_GAIN[name] || SFX_GAIN[n] || SFX_GAIN[n.replace(/\d+$/, '')] || 0.3;
   const vol = opts.volume === undefined ? 1 : clamp(+opts.volume || 0, 0, 4);
-  const pos = posOf(opts);
   return voice(buf, { gain: base * vol * mr(0.92, 1.05), rate: (opts.rate || 1) * mr(0.97, 1.03), pos, ref: opts.ref || 1.3, rolloff: opts.rolloff || 1,
-    group: opts.bus === 'ambience' ? 'loops' : 'sfx', pan: opts.pan, when: opts.delay ? ctx.currentTime + opts.delay : 0 });
+    group: opts.bus === 'ambience' ? 'loops' : 'sfx', pan: opts.pan, when: opts.delay ? now + opts.delay : 0, edge: opts.edge, rev: opts.rev, ls: !pos });
 }
 
 // generic positional loop -------------------------------------------------------------------------------------------
-const LOOPS = { rain: ['rainWash'], rain_glass: ['glass'], glass: ['glass'], window: ['glass'], roof: ['roof'], drip: ['drip'], drips: ['drip'],
+const LOOPS = { rain: ['rainWash'], drizzle: ['rainLight'], rain_glass: ['glassA'], glass: ['glassA'], window: ['glassB'], roof: ['roof'], drip: ['drip'], drips: ['dripLine'],
   fire: ['fireBed', 'fireCrackle'], fireplace: ['fireBed', 'fireCrackle'], crackle: ['fireCrackle'], embers: ['fireCrackle'], gutter: ['gutter'],
-  stream: ['gutter'], trickle: ['gutter'], water: ['gutter'], wind: ['wind'], boil: ['boil'], simmer: ['simmer'], purr: ['purr'], clock: ['clock'],
-  tick: ['clock'], hum: ['hum'], fridge: ['hum'], steam: ['steam'], vinyl: ['vinyl'], porch: ['porch'] };
+  stream: ['gutter'], trickle: ['gutter'], downspout: ['gutter'], water: ['gutter'], pond: ['pond'], leaves: ['leaves'], rustle: ['rustle'], wind: ['wind'],
+  boil: ['boil'], simmer: ['simmer'], purr: ['purr'], clock: ['clock'], tick: ['clock'], hum: ['hum'], fridge: ['hum'], steam: ['steam'], vinyl: ['vinyl'],
+  porch: ['porch'], hiss: ['fireHiss'] };
 function loop(name, opts = {}) {
   const h = {
     name, opts: Object.assign({}, opts), vol: opts.volume === undefined ? 1 : +opts.volume || 0,
@@ -9407,12 +9742,12 @@ function loop(name, opts = {}) {
 function materialize(h) {
   if (h.stopped || h.live) return;
   const names = LOOPS[h.name] || (hasSound(h.name) ? [h.name] : null);
-  if (!names) { C.log('audio', 'unknown loop ' + h.name); return; }
+  if (!names || !names.every(hasSound)) { C.log('audio', 'unknown loop ' + h.name); return; }    // (never wait on a buffer that cannot exist)
   if (!names.every(n => BUF[n])) { h.waiting = true; whenAll(names, () => { h.waiting = false; if (!h.stopped && !h.live) materialize(h); }); return; }
-  const bus = h.opts.bus === 'sfx' ? G.loopsSfx : h.opts.bus === 'music' ? G.music : G.loops;
+  const grp = h.opts.bus === 'sfx' ? 'loopsSfx' : h.opts.bus === 'music' ? 'music' : 'loops', bus = G[grp];
   const g = gainNode(0);
   let em = null;
-  if (h.pos) { em = makeEmitter({ x: h.pos[0], y: h.pos[1], z: h.pos[2], out: bus, ref: h.opts.ref || 1, rolloff: h.opts.rolloff || 1.2 }); g.connect(em.input); }
+  if (h.pos) { em = makeEmitter({ x: h.pos[0], y: h.pos[1], z: h.pos[2], group: grp, ref: h.opts.ref || 1, rolloff: h.opts.rolloff || 1.2 }); g.connect(em.input); }
   else g.connect(bus);
   const srcs = names.map(nm => loopSource(nm, g, 1, Math.random(), h.opts.rate || 1)).filter(Boolean);
   h.live = { g, em, srcs };
@@ -9668,25 +10003,40 @@ function buildGraph() {
   master.connect(duckG); duckG.connect(duckLP); duckLP.connect(comp); comp.connect(limiter); limiter.connect(shaper); shaper.connect(muteG); muteG.connect(ctx.destination);
   busMusic = gainNode(1); busAmb = gainNode(1); busSfx = gainNode(1);
   busMusic.connect(master); busAmb.connect(master); busSfx.connect(master);
-  convolver = ctx.createConvolver(); whenBuf('ir', b => { if (b) convolver.buffer = b; }, true);
-  revSend = gainNode(1); revRet = gainNode(0.15);
-  busSfx.connect(revSend); busMusic.connect(revSend); revSend.connect(convolver); convolver.connect(revRet); revRet.connect(master);
-  for (const [name, bus] of [['rain', busAmb], ['wind', busAmb], ['thunder', busAmb], ['fire', busAmb], ['clock', busAmb], ['loops', busAmb],
-    ['music', busMusic], ['sfx', busSfx], ['steps', busSfx], ['kettle', busSfx], ['purr', busSfx], ['loopsSfx', busSfx]]) { G[name] = gainNode(1); G[name].connect(bus); }
+  // two reverbs (cottage room, open air); each return is muffled when the listener is on the other side of the walls
+  RV.inIn = gainNode(1); RV.outIn = gainNode(1);
+  RV.convIn = ctx.createConvolver(); RV.convOut = ctx.createConvolver(); RV.convIn.normalize = false; RV.convOut.normalize = false;
+  whenBuf('irRoom', b => { if (b) RV.convIn.buffer = b; }, true);
+  whenBuf('irOut', b => { if (b) RV.convOut.buffer = b; }, true);
+  RV.retIn = gainNode(LV.revIn); RV.retOut = gainNode(LV.revOut);
+  RV.inIn.connect(RV.convIn); RV.convIn.connect(RV.retIn); RV.outIn.connect(RV.convOut); RV.convOut.connect(RV.retOut);
+  RV.ocIn = makeOccChain(master, 0.6, 0.05, true); RV.ocOut = makeOccChain(master, 0.6, 0.05);
+  RV.retIn.connect(RV.ocIn.input); RV.retOut.connect(RV.ocOut.input);
+  for (const b of ['music', 'amb', 'sfx']) { BS.in[b] = gainNode(1); BS.in[b].connect(RV.inIn); BS.out[b] = gainNode(1); BS.out[b].connect(RV.outIn); }
+  for (const [name, bus, bk] of [['rain', busAmb, 'amb'], ['wind', busAmb, 'amb'], ['thunder', busAmb, 'amb'], ['fire', busAmb, 'amb'], ['clock', busAmb, 'amb'],
+    ['loops', busAmb, 'amb'], ['music', busMusic, 'music'], ['sfx', busSfx, 'sfx'], ['steps', busSfx, 'sfx'], ['kettle', busSfx, 'sfx'], ['purr', busSfx, 'sfx'],
+    ['loopsSfx', busSfx, 'sfx']]) {
+    G[name] = gainNode(1); G[name].connect(bus);
+    GS.in[name] = gainNode(1); GS.in[name].connect(BS.in[bk]); GS.out[name] = gainNode(1); GS.out[name].connect(BS.out[bk]);
+  }
+  // non-positional sounds (own footsteps, UI-ish one-shots) reverberate in whichever space the listener is in
+  RV.ls = gainNode(0.65); RV.lsIn = gainNode(1); RV.lsOut = gainNode(0);
+  RV.ls.connect(RV.lsIn); RV.ls.connect(RV.lsOut); RV.lsIn.connect(GS.in.steps); RV.lsOut.connect(GS.out.steps);
   stepPanL = ctx.createStereoPanner(); stepPanL.pan.value = -0.12; stepPanL.connect(G.steps);
   stepPanR = ctx.createStereoPanner(); stepPanR.pan.value = 0.12; stepPanR.connect(G.steps);
+  stepPanL.connect(RV.ls); stepPanR.connect(RV.ls);
   layers.dropG = gainNode(1); layers.dropG.connect(G.rain);
   dropPans = [-0.75, -0.3, 0.3, 0.75].map(p => { const s = ctx.createStereoPanner(); s.pan.value = p; s.connect(layers.dropG); return s; });
   layers.windOcc = makeOccChain(G.wind);
-  layers.thunderOcc = makeOccChain(G.thunder, 0.2, 0.03);
+  layers.thunderOcc = makeOccChain(G.thunder, 0.3, 0.025);          // thunder is mostly low end: it gets through walls
 }
 function applySettings() {
   if (!ctx) return;
   const s = C.settings || {}, v = (x, d) => { const n = +x; return clamp(isFinite(n) ? n : d, 0, 1); };
   setP(master.gain, Math.pow(v(s.masterVolume, 0.8), 2), 0.05);
-  setP(busMusic.gain, Math.pow(v(s.musicVolume, 0.7), 2) / 0.49, 0.05);
-  setP(busAmb.gain, Math.pow(v(s.ambienceVolume, 0.9), 2) / 0.81, 0.05);
-  setP(busSfx.gain, Math.pow(v(s.sfxVolume, 0.8), 2) / 0.64, 0.05);
+  const vol = { music: Math.pow(v(s.musicVolume, 0.7), 2) / 0.49, amb: Math.pow(v(s.ambienceVolume, 0.9), 2) / 0.81, sfx: Math.pow(v(s.sfxVolume, 0.8), 2) / 0.64 };
+  setP(busMusic.gain, vol.music, 0.05); setP(busAmb.gain, vol.amb, 0.05); setP(busSfx.gain, vol.sfx, 0.05);
+  for (const b of ['music', 'amb', 'sfx']) { setP(BS.in[b].gain, vol[b], 0.05); setP(BS.out[b].gain, vol[b], 0.05); }   // reverb follows the bus volume
 }
 function applyMute() {
   if (A) A.muted = !!C.state.muted;
@@ -9699,24 +10049,33 @@ function toggleMute() {
   if (!C.state.muted) resumeCtx();
 }
 
-// ambience layers start as soon as their buffers arrive from the render worker (rain first); everything else is
-// pre-rendered in the background so later sounds never cause a hitch.
+// ambience layers start as soon as their buffers arrive from the render worker (reverbs + rain first); everything
+// else is pre-rendered in the background so later sounds never cause a hitch.
 function startAmbience() {
-  request(['rainWash', 'rainTicksA', 'rainTicksB', 'rainLow', 'fireBed', 'fireCrackle', 'clock', 'roof', 'porch', 'glass', 'gutter', 'wind']);
+  request(['irRoom', 'irOut', 'rainWash', 'rainLight', 'rainTicksA', 'rainTicksB', 'rainLow', 'glassA', 'glassB', 'roof', 'porch', 'wind', 'gutter',
+    'dripLine', 'pond', 'leaves', 'rustle']);
   const later = [];
   for (let k = 0; k < 8; k++) later.push('drop' + k, 'pop' + k);
+  for (let k = 0; k < 12; k++) later.push('crk' + k);
+  later.push('fireBed', 'fireCrackle', 'fireHiss', 'settle0', 'settle1', 'settle2', 'clock');
   later.push('thunderMid', 'thunderFar1', 'thunderClose', 'thunderFar2');
-  for (const s of ['wood', 'rug', 'stairs', 'tile', 'porch', 'grass', 'stone', 'gravel', 'mud', 'carpet', 'water']) for (let k = 0; k < STEP_VARIANTS; k++) later.push(`step_${s}_${k}`);
-  later.push('floor_creak0', 'floor_creak1', 'floor_creak2', 'chair_creak', 'cushion', ...Object.keys(SFX_GAIN).filter(k => hasSound(k)));
+  for (const s of ['wood', 'rug', 'stairs', 'tile', 'porch', 'grass', 'stone', 'gravel', 'mud', 'carpet', 'water']) for (let k = 0; k < STEP_VARIANTS; k++) later.push(`stepH_${s}_${k}`, `stepT_${s}_${k}`);
+  for (let k = 0; k < 6; k++) later.push('board' + k);
+  for (let k = 0; k < 4; k++) later.push('squeak' + k, 'wet' + k, 'cloth' + k);
+  for (let k = 0; k < 3; k++) later.push('rocker' + k, 'house_creak' + k);
+  later.push('rattle', 'floor_creak0', 'floor_creak1', 'floor_creak2', 'chair_creak', 'cushion', ...Object.keys(SFX_GAIN).filter(k => hasSound(k)));
   later.push('simmer', 'boil', 'steam', 'purr', 'drip', 'hum', ...musicSampleNames());
   request(later);
   whenAll(later, () => { A._warm = true; });
-  whenBuf('rainWash', () => {        // outdoor dense wash + muffled indoor copy + open-door leak
-    layers.lpA = filt('lowpass', 750, 0.7); layers.lpB = filt('lowpass', 750, 0.7);
-    layers.lpA.connect(layers.lpB); layers.lpB.connect(G.rain);
+  whenAll(['rainWash', 'rainLight'], () => {   // open-sky beds (drizzle ↔ downpour), their transmission indoors, the open-door leak
     layers.wash = loopSource('rainWash', G.rain, 0, 0);
-    layers.inside = loopSource('rainWash', layers.lpA, 0, 0.46);
-    const em = makeEmitter({ x: DOORWAY[0], y: DOORWAY[1], z: DOORWAY[2] + 0.4, group: 'rain', model: 'equalpower', ref: 1.5, rolloff: 1 });
+    layers.light = loopSource('rainLight', G.rain, 0, 0.37);
+    // through walls and closed windows: mass-law transmission (a gentle low-pass plus a shelf cut), not an underwater muffle
+    layers.inLP = filt('lowpass', 1000, 0.6); layers.inShelf = filt('highshelf', 2200); layers.inShelf.gain.value = -9;
+    layers.inLP.connect(layers.inShelf); layers.inShelf.connect(G.rain);
+    layers.inside = loopSource('rainWash', layers.inLP, 0, 0.46);
+    layers.insideL = loopSource('rainLight', layers.inLP, 0, 0.81);
+    const em = makeEmitter({ x: DOORWAY[0], y: DOORWAY[1], z: DOORWAY[2] + 0.4, group: 'rain', model: 'equalpower', ref: 1.5, rolloff: 1, edge: true, rev: 0.5 });
     const hp = filt('highpass', 250, 0.7); hp.connect(em.input);
     layers.leak = loopSource('rainWash', hp, 0, 0.71);
   });
@@ -9725,40 +10084,100 @@ function startAmbience() {
     loopSource('rainTicksA', g, 1, 0); loopSource('rainTicksB', g, 1, 0.3);
   });
   whenBuf('rainLow', () => { const lp = filt('lowpass', 220, 0.6); lp.connect(G.rain); layers.low = loopSource('rainLow', lp, 0, 0); });
-  whenBuf('roof', () => {            // rain on the roof heard from the loft, muffled by the boards and insulation
-    const lp = filt('lowpass', 750, 0.6); lp.connect(G.rain);
-    layers.roof = loopSource('roof', lp, 0, 0);
-  });
-  whenBuf('porch', () => { layers.porch = loopSource('porch', G.rain, 0, 0); });
-  whenBuf('glass', () => {           // skylights sk_1..sk_3 (glass centre on the roof underside)
-    layers.glass = [[-5.45, 1.75], [-2.85, 1.75], [4.25, -1.75]].map(([x, z], i) => {
-      const em = makeEmitter({ x, y: 7.5 - 0.7 * Math.abs(z), z, group: 'rain', model: 'equalpower', ref: 1.2, rolloff: 1.2 });
-      const lp = filt('lowpass', 2600, 0.6); lp.connect(em.input);          // soft taps on the glass, not bright ticks
-      return loopSource('glass', lp, 0, i * 0.33, 1 + (i - 1) * 0.04);
+  whenAll(['glassA', 'glassB'], () => {        // rain on every window pane, located at the glass (heard indoors)
+    layers.windows = WINDOWS.map((w, i) => {
+      const em = makeEmitter({ x: w.p[0], y: w.p[1], z: w.p[2], group: 'rain', model: 'equalpower', ref: w.ref, rolloff: 1.6, rev: 0.3 });
+      return { w, em, src: loopSource(i % 2 ? 'glassB' : 'glassA', em.input, 0, (i * 0.37) % 1, 0.94 + (i % 5) * 0.03) };
+    });
+    layers.sky = SKYLIGHTS.map(([x, z], i) => {                 // skylights take the rain head-on
+      const em = makeEmitter({ x, y: 7.45 - 0.7 * Math.abs(z), z, group: 'rain', model: 'equalpower', ref: 1.2, rolloff: 1.3, rev: 0.35 });
+      const lp = filt('lowpass', 3500, 0.6); lp.connect(em.input);          // playtest: soft taps on the glass, not bright ticks
+      return loopSource(i % 2 ? 'glassA' : 'glassB', lp, 0, 0.2 + i * 0.29, 1.05 + i * 0.04);
     });
   });
-  whenBuf('gutter', () => {          // gutter trickle + downspout gurgle at the four outlets
-    layers.gutters = [[-7.1, 5.15], [7.1, 5.15], [-7.1, -5.15], [7.1, -5.15]].map(([x, z], i) => {
-      const em = makeEmitter({ x, y: -0.3, z, group: 'rain', model: 'equalpower', ref: 0.9, rolloff: 1.3 });
+  whenBuf('roof', () => {                      // both slate slopes as plane sources: loudest where the ceiling comes down low
+    layers.roof = [1, -1].map((sg, i) => {
+      const em = makeEmitter({ group: 'rain', model: 'equalpower', ref: 1.0, rolloff: 0.9, rev: 0.35 });
+      lineSource(em, pt => { const zs = clamp((sg * L.z - 0.7 * (L.y - 7.5)) / 1.49, 0.15, 4.75); pt[0] = clamp(L.x, -6.75, 6.75); pt[1] = 7.5 - 0.7 * zs; pt[2] = sg * zs; });
+      const lp = filt('lowpass', 1100, 0.6); lp.connect(em.input);          // playtest: boards + insulation muffle the slates
+      return loopSource('roof', lp, 0, i * 0.5, 1 + i * 0.04);
+    });
+  });
+  whenBuf('porch', () => {                     // porch roof drumming: overhead on the porch, from its direction elsewhere
+    const em = makeEmitter({ group: 'rain', model: 'equalpower', ref: 1.2, rolloff: 1.0, rev: 0.5 });
+    lineSource(em, pt => { const zc = clamp(L.z, 5.05, 7.4); pt[0] = clamp(L.x, 1.0, 7.0); pt[1] = 3.2 - 0.25 * (zc - 5.0); pt[2] = zc; });
+    layers.porchRoof = loopSource('porch', em.input, 0, 0);
+  });
+  whenBuf('gutter', () => {                    // the four downspouts gushing onto their splash blocks
+    layers.gutters = DOWNSPOUTS.map(([x, z], i) => {
+      const em = makeEmitter({ x, y: -0.3, z, group: 'rain', model: 'equalpower', ref: 0.9, rolloff: 1.3, rev: 0.8 });
       return loopSource('gutter', em.input, 0, i * 0.27, 0.92 + i * 0.05);
     });
   });
-  whenBuf('wind', () => {            // gust-modulated band-passed noise + a faint whistle
-    const bp = filt('bandpass', 400, 0.8); bp.connect(layers.windOcc.input);
-    const bp2 = filt('bandpass', 900, 6); bp2.connect(layers.windOcc.input);
-    const w = loopSource('wind', bp, 0, 0), wh = loopSource('wind', bp2, 0, 0.5);
-    w.bp = bp; wh.bp = bp2; layers.whistle = wh; layers.wind = w;
+  whenBuf('dripLine', () => {                  // drops off the eaves and the porch-roof edge (line sources)
+    layers.drips = DRIPLINES.map((d, i) => {
+      const em = makeEmitter({ group: 'rain', model: 'equalpower', ref: 1.4, rolloff: 0.8, rev: 0.8 });
+      lineSource(em, pt => { pt[0] = clamp(L.x, d.x0, d.x1); pt[1] = d.y; pt[2] = d.z; });
+      return loopSource('dripLine', em.input, 0, i * 0.31, 0.95 + i * 0.05);
+    });
   });
-  whenAll(['fireBed', 'fireCrackle'], () => {
-    const em = makeEmitter({ x: -6.25, y: 0.55, z: 2.5, group: 'fire', ref: 1.3, rolloff: 1.0 });
-    layers.fireEm = em;
-    layers.fireCr = loopSource('fireCrackle', em.input, 0, 0);
-    layers.fireBed = loopSource('fireBed', em.input, 0, 0);
+  whenBuf('pond', () => {
+    const em = makeEmitter({ x: POND[0], y: POND[1], z: POND[2], group: 'rain', model: 'equalpower', ref: 2.4, rolloff: 1.0, rev: 0.8 });
+    layers.pond = loopSource('pond', em.input, 0, 0);
   });
-  whenBuf('clock', () => {
-    const em = makeEmitter({ x: 2.35, y: 1.2, z: -0.3, group: 'clock', ref: 0.9, rolloff: 1.2 });
-    layers.clock = loopSource('clock', em.input, LV.clock, 0);
+  whenAll(['leaves', 'rustle', 'dripLine'], () => {   // canopies: rain patter, fat drops falling through, leaves in the wind
+    layers.trees = TREES.map((t, i) => {
+      const em = makeEmitter({ x: t.p[0], y: t.p[1], z: t.p[2], group: 'rain', model: 'equalpower', ref: t.ref, rolloff: 1.0, rev: 0.8 });
+      const wem = makeEmitter({ x: t.p[0], y: t.p[1] + 1.5, z: t.p[2], group: 'wind', model: 'equalpower', ref: t.ref, rolloff: 1.0, rev: 0.6 });
+      return { t, leaves: loopSource('leaves', em.input, 0, i * 0.4, 1 + i * 0.05), drips: loopSource('dripLine', em.input, 0, 0.5 + i * 0.2, 0.85),
+        rustle: loopSource('rustle', wem.input, 0, i * 0.33, 1 - i * 0.04) };
+    });
+    const pem = makeEmitter({ group: 'wind', model: 'equalpower', ref: 3.0, rolloff: 0.8, rev: 0.6 });   // pine row: needles sough
+    lineSource(pem, pt => { pt[0] = clamp(L.x, -14, 14); pt[1] = 5; pt[2] = -11.3; });
+    const plp = filt('lowpass', 2600, 0.6); plp.connect(pem.input);
+    layers.pines = loopSource('rustle', plp, 0, 0.6, 0.8);
   });
+  whenBuf('wind', () => {
+    const bp = filt('bandpass', 400, 0.8); bp.connect(layers.windOcc.input);          // outdoor gusts
+    layers.wind = loopSource('wind', bp, 0, 0); layers.wind.bp = bp;
+    const mbp = filt('bandpass', 170, 1.2); mbp.connect(G.wind);                      // indoors: the low moan around the house
+    layers.moan = loopSource('wind', mbp, 0, 0.35); layers.moan.bp = mbp;
+    const wem = makeEmitter({ x: 3.75, y: 1.95, z: 4.8, group: 'wind', ref: 0.8, rolloff: 1.4, edge: true, rev: 0.7 });
+    const wbp = filt('bandpass', 900, 18); wbp.connect(wem.input);                    // whistling through the front door's gaps
+    layers.whistle = loopSource('wind', wbp, 0, 0.5); layers.whistle.bp = wbp;
+  });
+}
+function worldPos(obj, out) {
+  try { obj.updateMatrixWorld(true); const e = obj.matrixWorld.elements; out[0] = e[12]; out[1] = e[13]; out[2] = e[14]; return true; } catch (err) { return false; }
+}
+// the fire and the grandfather clock only sound once their objects exist (living / hallstudy modules): no crackle
+// from an empty wall
+function checkPresence() {
+  const lt = C.lights && C.lights.find(l => l && l.id === 'fire'), fp = C.interact && C.interact.get ? C.interact.get('fireplace') : null;
+  present.fire = !!(lt || fp);
+  if (present.fire && !layers.fireEm && !layers.fireWait) {
+    layers.fireWait = true;
+    const pos = [-6.25, 0.55, 2.5];
+    if (lt && lt.light) worldPos(lt.light, pos);
+    whenAll(['fireBed', 'fireCrackle', 'fireHiss'], () => {
+      const em = layers.fireEm = makeEmitter({ x: pos[0], y: pos[1], z: pos[2], group: 'fire', ref: 1.3, rolloff: 1.0, rev: 1 });
+      layers.fireBed = loopSource('fireBed', em.input, 0, 0);
+      layers.fireCr = loopSource('fireCrackle', em.input, 0, 0.3);
+      layers.fireHiss = loopSource('fireHiss', em.input, 0, 0.6);
+    });
+  }
+  const ck = C.interact && C.interact.get ? C.interact.get('clock') : null;
+  present.clock = !!ck;
+  if (ck && !layers.clock && !layers.clockWait) {
+    layers.clockWait = true;
+    const pos = [2.35, 1.2, -0.3];
+    // floor-origin objects: lift to the hood; pick-proxies are already centred on the case
+    if (ck.object && worldPos(ck.object, pos)) pos[1] = clamp(pos[1] < 0.5 ? pos[1] + 1.6 : pos[1], 1.1, 2.0);
+    whenBuf('clock', () => {
+      const em = makeEmitter({ x: pos[0], y: pos[1], z: pos[2], group: 'clock', ref: 0.9, rolloff: 1.2, rev: 1.2 });
+      layers.clock = loopSource('clock', em.input, 0, 0);
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -9777,49 +10196,107 @@ function onStart() {
   Object.assign(A.buses, { master, music: busMusic, ambience: busAmb, sfx: busSfx });
   applySettings(); applyMute();
   startAmbience();
+  checkPresence();
   for (const h of pendingLoops) materialize(h);
   pendingLoops.clear();
   if (MUS.want) musicPlay();
 }
+// integer hash → [0, 1): stable per floorboard / stair tread
+function hash01(a, b, c) { let h = (a * 374761393 + b * 668265263 + c * 1274126177) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; }
+const pickStep = (part, s) => getBuf(`step${part}_${s}_${(Math.random() * STEP_VARIANTS) | 0}`);
 function onFootstep(p) {
   if (!ctx || !p || p.surface === 'none') return;
   const now = ctx.currentTime;
   if (now - lastStepT < 0.07) return;
   lastStepT = now;
-  const s = SURF[p.surface] || 'wood';
-  const buf = getBuf(`step_${s}_${(Math.random() * STEP_VARIANTS) | 0}`);
-  const g = STEP_GAIN[s] * (p.run ? 1.3 : 1) * (p.crouch ? 0.45 : 1) * mr(0.8, 1.05) * (p.volume === undefined ? 1 : p.volume);
+  const s = SURF[p.surface] || 'wood', pos = posOf(p), vel = C.player && C.player.velocity;
+  const v = vel ? Math.hypot(vel.x || 0, vel.z || 0) : (p.run ? 3.8 : 2);
+  const run = !!p.run || v > 3.1, crouch = !!p.crouch && !run;
+  const dy = pos && STEP.pos ? pos[1] - STEP.pos[1] : 0, up = s === 'stairs' && dy > 0.04, down = s === 'stairs' && dy < -0.04;
+  STEP.pos = pos;
   stepSide = !stepSide;
-  voice(buf, { out: stepSide ? stepPanL : stepPanR, gain: g, rate: mr(0.95, 1.05) * (p.run ? 1.04 : 1) * (p.crouch ? 0.95 : 1) });
-  const creakP = s === 'wood' ? 0.07 : s === 'stairs' ? 0.14 : s === 'porch' ? 0.06 : 0;
-  if (creakP && Math.random() < creakP * (p.crouch ? 1.5 : 1)) {
-    voice(getBuf('floor_creak' + ((Math.random() * 3) | 0)), { out: stepSide ? stepPanL : stepPanR, gain: SFX_GAIN.floor_creak * mr(0.6, 1.1), rate: mr(0.85, 1.15), when: now + mr(0.03, 0.09), low: true });
+  const out = stepSide ? stepPanL : stepPanR, t0 = now + 0.004;
+  const force = (run ? 1.3 : crouch ? 0.45 : 1) * clamp(0.8 + v * 0.1, 0.85, 1.2) * mr(0.85, 1.05) * (p.volume === undefined ? 1 : p.volume);
+  const hg = STEP_GAIN[s] * force * (up ? 0.55 : down ? 1.1 : crouch ? 0.8 : 1), tg = STEP_GAIN[s] * force * TOE_GAIN[s] * (up ? 1.7 : run ? 1.15 : 1);
+  const gap = up ? 0.045 : down ? 0.05 : run ? mr(0.018, 0.035) : crouch ? mr(0.14, 0.2) : mr(0.075, 0.105);
+  const rate = mr(0.96, 1.04) * (run ? 1.03 : 1), hb = pickStep('H', s), tb = pickStep('T', s);
+  // heel strike then the roll onto the toe; climbing stairs lands on the ball of the foot first
+  voice(up ? tb : hb, { out, gain: up ? tg : hg, rate, when: t0 });
+  voice(up ? hb : tb, { out, gain: up ? hg : tg, rate: rate * mr(0.98, 1.02), when: t0 + gap });
+  // creaky boards are fixed places (each with its own voice) — walk the same spot, hear the same board
+  if (s === 'wood' || s === 'stairs' || s === 'porch') {
+    const h = !pos ? 0.99 : s === 'stairs' ? hash01(Math.round((3.6 - pos[2]) / 0.27 + 0.5), 7, 3) * 0.55 : hash01(Math.floor(pos[0] / 0.55), Math.floor(pos[2] / 0.55), pos[1] > 2 ? 1 : 0);
+    const creaky = h < (s === 'porch' ? 0.1 : 0.16);
+    if ((creaky && Math.random() < 0.8) || Math.random() < 0.015) {
+      const k = creaky ? ((h * 97) | 0) % 6 : (Math.random() * 6) | 0;
+      voice(getBuf('board' + k), { out, gain: SFX_GAIN.board * (creaky ? 1 : 0.5) * (run ? 1.15 : crouch ? 0.85 : 1) * mr(0.85, 1.05),
+        rate: (creaky ? 0.88 + ((h * 7919) % 1) * 0.3 : mr(0.85, 1.15)) * mr(0.98, 1.02), when: t0 + gap * 0.6 + mr(0.02, 0.06), low: true });
+    }
   }
+  // shoes pick up water outside and squeak on smooth floors for a while indoors; wet ground splashes underfoot
+  const gw = Math.max(0, WET.ground), indoor = pos ? inHouse(pos[0], pos[1] + 0.5, pos[2]) : L.H > 0.5;
+  if (!indoor) {
+    const pick = s === 'water' ? 0.35 : s === 'mud' ? 0.25 : s === 'grass' ? 0.08 : (s === 'stone' || s === 'gravel') ? 0.05 : 0;
+    WET.shoe = Math.min(1, WET.shoe + pick * (s === 'water' ? 1 : gw));
+    if (gw > 0.12 && (s === 'stone' || s === 'gravel' || s === 'grass')) {
+      voice(getBuf('wet' + ((Math.random() * 4) | 0)), { out, gain: SFX_GAIN.wet * gw * force * mr(0.7, 1.1), rate: mr(0.9, 1.1), when: t0 + mr(0, 0.01), low: true });
+    }
+  } else {
+    WET.shoe *= 0.985;
+    if (WET.shoe > 0.12 && (s === 'wood' || s === 'tile' || s === 'stairs') && Math.random() < WET.shoe * (s === 'tile' ? 0.7 : 0.45)) {
+      voice(getBuf('squeak' + ((Math.random() * 4) | 0)), { out, gain: SFX_GAIN.squeak * (0.4 + WET.shoe) * mr(0.7, 1.1), rate: mr(0.9, 1.15), when: t0 + gap * mr(0.4, 1.1), low: true });
+    }
+  }
+  if (run && Math.random() < 0.5) voice(getBuf('cloth' + ((Math.random() * 4) | 0)), { out, gain: SFX_GAIN.cloth * mr(0.6, 1), rate: mr(0.9, 1.1), when: t0, low: true });
 }
 function onJump(p) {
   if (!ctx) return;
-  onFootstep({ surface: (p && p.surface) || C.player.surface, volume: 0.6 });
-  play('whoosh', { volume: 0.25, rate: 1.4 });
+  const s = SURF[(p && p.surface) || C.player.surface] || 'wood', now = ctx.currentTime;
+  voice(pickStep('T', s), { out: stepSide ? stepPanR : stepPanL, gain: STEP_GAIN[s] * TOE_GAIN[s] * 1.3, rate: mr(0.95, 1.05) });      // push-off
+  voice(getBuf('cloth' + ((Math.random() * 4) | 0)), { out: stepPanL, gain: SFX_GAIN.cloth * 1.2, rate: mr(0.9, 1.1), when: now + 0.02 });
+  lastStepT = now;
 }
 function onLand(p) {
   if (!ctx) return;
-  const sp = p && isFinite(p.speed) ? p.speed : 3.5, s = SURF[(p && p.surface) || C.player.surface] || 'wood', k = clamp(sp / 4.5, 0.4, 1.5);
-  const b = () => getBuf(`step_${s}_${(Math.random() * STEP_VARIANTS) | 0}`);
-  voice(b(), { out: stepPanL, gain: STEP_GAIN[s] * 1.15 * k, rate: mr(0.82, 0.9) });
-  voice(b(), { out: stepPanR, gain: STEP_GAIN[s] * 0.8 * k, rate: mr(0.85, 0.95), when: ctx.currentTime + 0.035 });
-  lastStepT = ctx.currentTime;
+  const sp = p && isFinite(p.speed) ? p.speed : 3.5, s = SURF[(p && p.surface) || C.player.surface] || 'wood', k = clamp(sp / 4.5, 0.4, 1.5), now = ctx.currentTime;
+  voice(pickStep('H', s), { out: stepPanL, gain: STEP_GAIN[s] * 1.2 * k, rate: mr(0.84, 0.92), when: now });
+  voice(pickStep('H', s), { out: stepPanR, gain: STEP_GAIN[s] * 0.9 * k, rate: mr(0.86, 0.94), when: now + mr(0.015, 0.04) });
+  voice(pickStep('T', s), { out: stepPanR, gain: STEP_GAIN[s] * TOE_GAIN[s] * k, rate: mr(0.9, 1.0), when: now + mr(0.05, 0.08) });
+  voice(getBuf('cloth' + ((Math.random() * 4) | 0)), { out: stepPanR, gain: SFX_GAIN.cloth * 1.4 * Math.min(1, k), rate: mr(0.85, 1), when: now });
+  if ((s === 'wood' || s === 'stairs' || s === 'porch') && k > 0.8) {
+    voice(getBuf('board' + ((Math.random() * 6) | 0)), { out: stepPanL, gain: SFX_GAIN.board * 0.8 * k, rate: mr(0.85, 1.05), when: now + mr(0.04, 0.1), low: true });
+  }
+  lastStepT = now;
 }
+// thunder: a fresh strike-specific render (distance, strength, seed) from the worker, timed by the real travel time
+// of its first arrival; a pre-rendered one stands in if the render is late. Close strikes rattle the nearest panes.
 function onLightning(p) {
   if (!ctx) return;
-  const d = clamp(p && isFinite(p.distance) ? +p.distance : 2.5, 0.05, 20), s = clamp(p && isFinite(p.strength) ? +p.strength : 0.7, 0, 1);
-  const delay = Math.min(d * 3, 9);
-  const kind = d < 1.2 ? 'close' : d < 3.2 ? 'mid' : 'far';
-  const name = kind === 'close' ? 'thunderClose' : kind === 'mid' ? 'thunderMid' : (Math.random() < 0.5 ? 'thunderFar1' : 'thunderFar2');
-  const at = ctx.currentTime + delay;
-  const lvl = LV.thunder * (0.45 + 0.55 * s) * clamp(1.25 / (0.8 + d * 0.3), 0.3, 1.1);
+  const d = clamp(p && isFinite(p.distance) ? +p.distance : 2.5, 0.2, 12), s = clamp(p && isFinite(p.strength) ? +p.strength : 0.7, 0, 1), flash = ctx.currentTime;
+  const lvl = LV.thunder * (0.55 + 0.45 * s) * clamp(Math.pow(0.9 / d, 0.85), 0.14, 1.25);
   let pan = 0;
   if (p && isFinite(p.dirX) && isFinite(p.dirZ)) { const rx = -L.fz, rz = L.fx, rl = Math.hypot(rx, rz) || 1, dl = Math.hypot(p.dirX, p.dirZ) || 1; pan = clamp((p.dirX * rx + p.dirZ * rz) / (rl * dl), -1, 1) * 0.55; }
-  whenBuf(name, buf => { if (buf && ctx.currentTime < at + 1.5) voice(buf, { out: layers.thunderOcc.input, gain: lvl, rate: mr(0.9, 1.08), when: at, pan }); }, true);
+  const fallback = d < 1.2 ? 'thunderClose' : d < 3.2 ? 'thunderMid' : (Math.random() < 0.5 ? 'thunderFar1' : 'thunderFar2');
+  const name = `thunder|${d.toFixed(2)}|${s.toFixed(2)}|${(Math.random() * 1e9) | 0}`;
+  let done = false;
+  const fire = (nm, buf) => {
+    const fresh = nm === name;
+    if (done || !buf) { if (fresh) { delete BUF[nm]; delete META[nm]; } return; }
+    done = true;
+    const at = flash + Math.min(16, fresh && META[nm] ? META[nm].lead : d * 1000 / 343);
+    if (ctx.currentTime > at + 1.0) { if (fresh) { delete BUF[nm]; delete META[nm]; } return; }
+    voice(buf, { out: layers.thunderOcc.input, gain: lvl, rate: fresh ? 1 : mr(0.92, 1.06), when: at, pan, onEnd: fresh ? () => { delete BUF[nm]; delete META[nm]; } : null });
+    if (d < 1.6 && L.H > 0.5) rattleWindows(at + 0.02, (1.6 - d) / 1.4 * (0.5 + 0.5 * s));
+  };
+  if (worker) {
+    whenBuf(name, b => fire(name, b), true);
+    setTimeout(() => { if (!done) whenBuf(fallback, b => fire(fallback, b), true); }, Math.max(250, d * 2915 - 450));
+  } else whenBuf(fallback, b => fire(fallback, b), true);
+}
+function rattleWindows(at, k) {
+  if (k <= 0.02) return;
+  const ws = WINDOWS.map(w => [w, Math.hypot(w.p[0] - L.x, w.p[1] - L.y, w.p[2] - L.z)]).sort((a, b) => a[1] - b[1]).slice(0, 2);
+  ws.forEach(([w], i) => voice(getBuf('rattle'), { pos: w.p, gain: SFX_GAIN.rattle * k * (i ? 0.6 : 1), rate: mr(0.85, 1.15), when: at + i * mr(0.02, 0.08), ref: 1, rolloff: 1.3 }));
 }
 function onDoor(p) {
   if (!p) return;
@@ -9827,15 +10304,34 @@ function onDoor(p) {
   if (id === 'door_front') doorState.front = !!p.open;
   if (!ctx) return;
   const pos = posOf(p);
-  const o = pos ? { x: pos[0], y: pos[1], z: pos[2] } : {};
-  if (id === 'gate') play('gate', o);
+  // house doors sit in the wall: audible on both sides (the front door's centre is just outside the wall plane)
+  const o = pos ? { x: pos[0], y: pos[1], z: pos[2], edge: id !== 'gate' } : {};
+  if (id === 'gate') play(p.open ? 'gate' : 'gate_close', o);
   else play(p.open ? 'door_open' : 'door_close', o);
 }
 function onSit(p) {
   if (!ctx) return;
-  const id = (p && p.id) || '';
+  const id = (p && p.id) || '', seat = C.player && C.player.seat;
+  if (seat && seat.rock) { ROCK.on = true; ROCK.prev = null; ROCK.dir = 0; ROCK.last = ctx.currentTime; }
   if (/chair|bench|rocker|stool/.test(id) && !/arm/.test(id)) play('chair_creak', { volume: 0.9 });
   else play('cushion', { volume: 1 });
+}
+function onStand() { ROCK.on = false; if (ctx) play('cushion', { volume: 0.6, rate: 1.1 }); }
+// rocking chair: a creak at each end of the swing, found from the seated camera's motion along the seat's axis
+function trackRocker() {
+  const pl = C.player, seat = pl && pl.seat;
+  if (!ROCK.on || !seat || !seat.rock || pl.mode !== 'sit') return;
+  const proj = -L.x * Math.sin(seat.yaw || 0) - L.z * Math.cos(seat.yaw || 0), now = ctx.currentTime;
+  if (ROCK.prev !== null) {
+    const dd = proj - ROCK.prev, dir = dd > 2e-5 ? 1 : dd < -2e-5 ? -1 : ROCK.dir;
+    if (ROCK.dir && dir !== ROCK.dir && now - ROCK.last > 0.7) {
+      ROCK.last = now;
+      const sp = seat.position, pos = sp ? [sp[0], sp[1] - 0.7, sp[2]] : [L.x, L.y - 0.7, L.z];
+      voice(getBuf('rocker' + ((Math.random() * 3) | 0)), { pos, gain: SFX_GAIN.rocker * mr(0.7, 1.1) * (dir > 0 ? 1 : 0.8), rate: mr(0.92, 1.08), ref: 1, rolloff: 1.2 });
+    }
+    ROCK.dir = dir;
+  }
+  ROCK.prev = proj;
 }
 function frontDoorOpen() {
   const d = C.house && C.house.doors && C.house.doors.front;
@@ -9864,47 +10360,106 @@ function updateListener() {
     l.setPosition(px, py, pz); l.setOrientation(fx, fy, fz, ux, uy, uz);
   }
 }
+const setG = (l, v, tau = 0.12) => { if (l && l.gain) setP(l.gain, v, tau); };
+function gustAt(t) {
+  const nz = C.util && C.util.noise2D ? C.util.noise2D(t * 0.09, 3.7) : Math.sin(t * 0.31) * Math.sin(t * 0.13);
+  const nz2 = C.util && C.util.noise2D ? C.util.noise2D(t * 0.23, 9.1) : Math.sin(t * 0.71);
+  return clamp(0.5 + 0.45 * nz + 0.2 * nz2, 0, 1);
+}
+// gusts: mostly the weather's own wind (so the sound moves with the swaying trees and slanting rain), plus a local
+// gust field that travels downwind (~6 m/s) so trees and panes further downwind catch it a little later
+const gustAtPos = (x, z) => 0.65 * GUST.env + 0.35 * gustAt(GUST.t - (x * GUST.dx + z * GUST.dz) / 6);
+function updateWeather(dt) {
+  const w = C.env && C.env.wind, wx = w ? +w.x || 0 : 0.35, wz = w ? +w.z || 0 : 0.15, ws = Math.hypot(wx, wz);
+  GUST.t += dt;
+  if (GUST.avg < 0) GUST.avg = ws;
+  GUST.avg += (ws - GUST.avg) * (1 - Math.exp(-dt / 20));
+  GUST.env = clamp((ws / Math.max(0.05, GUST.avg) - 0.4) / 1.1, 0, 1);
+  GUST.W += (clamp(ws / 1.1, 0, 1.8) - GUST.W) * (1 - Math.exp(-dt * 2));
+  if (ws > 0.02) { GUST.dx = wx / ws; GUST.dz = wz / ws; }
+  GUST.g = gustAtPos(L.x, L.z);
+  // runoff: gutters and drips build up over ~15 s after the rain sets in and keep draining for a minute after it stops
+  if (WET.ground < 0) WET.ground = L.rain;
+  WET.ground += (L.rain - WET.ground) * (1 - Math.exp(-dt / (L.rain > WET.ground ? 15 : 45)));
+  if (L.H > 0.5) WET.shoe *= Math.exp(-dt / 80);
+}
 function mixRain() {
-  const r = L.rain, H = L.H, U = L.U, P = L.P, leak = L.leak;
-  const O = (1 - H) + H * 0.22 * leak;                              // how exposed the listener is to the open sky
-  if (layers.wash) setP(layers.wash.gain, LV.wash * O * Math.pow(r, 1.3) * (1 - 0.25 * P), 0.12);
-  if (layers.ticks) setP(layers.ticks.gain, LV.ticks * O * Math.sqrt(r) * (1 - 0.3 * P), 0.12);
-  if (layers.low) setP(layers.low.gain, LV.low * (O + H * 0.25) * r * r, 0.12);
+  const r = L.rain, H = L.H, P = L.P, gw = Math.max(0, WET.ground), hv = smooth(0.25, 0.95, r), lv = Math.pow(r, 1.15), sr = Math.sqrt(r);
+  const O = (1 - H) + H * 0.22 * L.leak;                          // how exposed the listener is to the open sky
+  setG(layers.wash, LV.wash * O * lv * (0.2 + 0.8 * hv) * (1 - 0.3 * P));
+  setG(layers.light, LV.light * O * sr * (1 - 0.75 * hv) * (1 - 0.3 * P));
+  setG(layers.ticks, LV.ticks * O * sr * (1 - 0.35 * P));
+  setG(layers.low, LV.low * (O + H * 0.2) * r * r);                 // the low roar carries through walls
   if (layers.inside) {
-    setP(layers.inside.gain, LV.inside * H * Math.pow(r, 1.1) * (1 - 0.5 * U), 0.12);
-    const f = 750 + 2600 * leak; setP(layers.lpA.frequency, f, 0.1); setP(layers.lpB.frequency, f, 0.1);
+    setG(layers.inside, LV.inside * H * lv * (0.25 + 0.75 * hv));
+    setG(layers.insideL, LV.inside * 0.8 * H * sr * (1 - 0.75 * hv));
+    setP(layers.inLP.frequency, 1000 + 2500 * L.leak, 0.1);
   }
-  if (layers.roof) setP(layers.roof.gain, LV.roof * H * r * (0.08 + 0.92 * U), 0.12);
-  if (layers.porch) setP(layers.porch.gain, LV.porch * r * (P + H * leak * 0.35), 0.12);
-  if (layers.leak) setP(layers.leak.gain, LV.leak * H * L.front * r, 0.12);
-  if (layers.glass) for (const gl of layers.glass) if (gl) setP(gl.gain, LV.glass * H * U * r, 0.12);
-  if (layers.gutters) for (const gu of layers.gutters) if (gu) setP(gu.gain, LV.gutter * Math.pow(r, 0.8), 0.2);
+  setG(layers.leak, LV.leak * H * L.front * r);
+  if (layers.windows) for (const wn of layers.windows) {
+    const w = wn.w, face = -(w.n[0] * GUST.dx + w.n[1] * GUST.dz);    // > 0: the pane faces into the wind
+    const exposure = (w.shelter || 1) * (0.45 + 0.55 * clamp(face * GUST.W, 0, 1.4)), g = gustAtPos(w.p[0], w.p[2]);
+    setG(wn.src, LV.window * H * Math.pow(r, 0.9) * exposure * (0.55 + 0.9 * g * clamp(face + 0.3, 0, 1.3)), 0.15);
+  }
+  if (layers.sky) for (const s of layers.sky) setG(s, LV.sky * H * r * (0.85 + 0.3 * GUST.g));
+  if (layers.roof) for (const rf of layers.roof) setG(rf, LV.roof * H * r * (0.35 + 0.65 * L.U) * (0.9 + 0.2 * GUST.g));
+  setG(layers.porchRoof, LV.porch * r);
+  const flow = Math.pow(smooth(0.02, 0.95, gw), 0.8);
+  if (layers.gutters) for (const gu of layers.gutters) setG(gu, LV.gutter * flow, 0.3);
+  if (layers.drips) for (const dp of layers.drips) setG(dp, LV.drip * Math.pow(gw, 0.9), 0.3);
+  setG(layers.pond, LV.pond * Math.pow(r, 0.9));
+  if (layers.trees) for (const t of layers.trees) { setG(t.leaves, LV.leaves * r); setG(t.drips, LV.canopy * Math.pow(gw, 1.2), 0.3); }
 }
-function mixWind(dt) {
-  if (!layers.wind) return;
-  windT += dt;
-  const w = C.env && C.env.wind, ws = w ? Math.hypot(w.x || 0, w.z || 0) : 0.38, W = clamp(ws / 0.5, 0, 1.6);
-  const nz = C.util && C.util.noise2D ? C.util.noise2D(windT * 0.09, 3.7) : Math.sin(windT * 0.31) * Math.sin(windT * 0.13);
-  const nz2 = C.util && C.util.noise2D ? C.util.noise2D(windT * 0.23, 9.1) : Math.sin(windT * 0.71);
-  const gust = clamp(0.5 + 0.45 * nz + 0.2 * nz2, 0, 1);
-  setP(layers.wind.gain, LV.wind * W * (0.3 + 0.7 * gust * gust), 0.3);
-  setP(layers.wind.bp.frequency, 260 + 420 * gust, 0.3);
-  setP(layers.whistle.gain, LV.whistle * W * Math.max(0, gust - 0.55) * 2.2 * (1 + L.H * 0.5), 0.3);
-  setP(layers.whistle.bp.frequency, 820 + 380 * gust, 0.3);
+function mixWind() {
+  const W = GUST.W, g = GUST.g, H = L.H;
+  if (layers.wind) { setG(layers.wind, LV.wind * W * (0.25 + 0.75 * g * g), 0.3); setP(layers.wind.bp.frequency, 260 + 420 * g, 0.3); }
+  if (layers.moan) { setG(layers.moan, LV.moan * H * W * (0.15 + 0.85 * Math.pow(g, 1.5)), 0.4); setP(layers.moan.bp.frequency, 140 + 90 * g, 0.4); }
+  if (layers.whistle) { setG(layers.whistle, LV.whistle * 3 * W * Math.max(0, g - 0.55) * 2.2, 0.3); setP(layers.whistle.bp.frequency, 820 + 380 * g, 0.3); }
+  if (layers.trees) for (const t of layers.trees) setG(t.rustle, LV.rustle * Math.pow(W, 1.2) * (0.12 + 0.88 * Math.pow(gustAtPos(t.t.p[0], t.t.p[2]), 1.6)), 0.25);
+  if (layers.pines) setG(layers.pines, LV.pines * W * (0.2 + 0.8 * Math.pow(gustAtPos(L.x, -11.3), 1.4)), 0.3);
+  // the timber frame answers strong gusts with the odd creak (heard indoors)
+  const high = g > 0.8 && W > 0.5;
+  if (high && !gustHigh && H > 0.6 && ctx.currentTime - houseCreakT > 14 && Math.random() < 0.45) {
+    houseCreakT = ctx.currentTime;
+    const a = Math.random() * TAU, pos = L.U > 0.5 ? [clamp(L.x + Math.cos(a) * 3, -6.5, 6.5), 5.8, clamp(L.z + Math.sin(a) * 1.5, -3.5, 3.5)] : nearestWallPoint();
+    voice(getBuf('house_creak' + ((Math.random() * 3) | 0)), { pos, gain: SFX_GAIN.house_creak * mr(0.6, 1.1) * Math.min(1.3, W), rate: mr(0.85, 1.1), ref: 1.5, rolloff: 1, low: true });
+  }
+  gustHigh = high;
 }
+function nearestWallPoint() {
+  const x = clamp(L.x, -6.6, 6.6), z = clamp(L.z, -4.6, 4.6);
+  return 6.6 - Math.abs(x) < 4.6 - Math.abs(z) ? [Math.sign(x || 1) * 6.6, 2.2, z] : [x, 2.2, Math.sign(z || 1) * 4.6];
+}
+// fire: bed, dense crackle and a hiss that swell with a slowly wandering activity, live crackle bursts and pops, logs
+// settling now and then, a flare-up when a log goes on
 function mixFire(dt) {
-  if (!layers.fireBed) return;
-  const tgt = clamp(C.env && isFinite(C.env.fireLevel) ? C.env.fireLevel : fireEvt, 0, 1.5);
+  if (!layers.fireEm) return;
+  const tgt = present.fire ? clamp(C.env && isFinite(C.env.fireLevel) ? C.env.fireLevel : fireEvt, 0, 1.5) : 0;
+  if (FIRE.lvl >= 0 && tgt > FIRE.lvl + 0.15) { FIRE.act = 1; FIRE.nextSettle = GUST.t + mr(1.5, 4); }
+  FIRE.lvl = tgt;
   fireS += (tgt - fireS) * (1 - Math.exp(-dt * 1.5));
-  setP(layers.fireBed.gain, LV.fireBed * fireS, 0.2);
-  setP(layers.fireCr.gain, LV.fireCrackle * Math.min(1, fireS) * (0.6 + 0.4 * fireS), 0.2);
-  if (fireS > 0.05 && Math.random() < dt * 1.1 * fireS) {
-    voice(getBuf('pop' + ((Math.random() * 8) | 0)), { out: layers.fireEm.input, gain: LV.pop * Math.pow(Math.random(), 1.5) * Math.min(1.2, fireS), rate: mr(0.85, 1.2), low: true });
+  FIRE.actT -= dt;
+  if (FIRE.actT <= 0) { FIRE.actT = mr(3, 9); FIRE.act = clamp(FIRE.act + mr(-0.35, 0.35), 0.1, 1); }
+  const f = Math.min(1, fireS), em = layers.fireEm.input;
+  setG(layers.fireBed, LV.fireBed * fireS * (0.8 + 0.3 * FIRE.act), 0.3);
+  setG(layers.fireCr, LV.fireCrackle * f * (0.6 + 0.4 * fireS), 0.3);
+  setG(layers.fireHiss, LV.fireHiss * f * (0.3 + 0.7 * FIRE.act * FIRE.act), 0.5);
+  if (fireS < 0.05) return;
+  if (Math.random() < fireS * (2.5 + 9 * FIRE.act) * dt) {
+    const burst = Math.random() < 0.22 ? 2 + ((Math.random() * 3) | 0) : 1, now = ctx.currentTime;
+    for (let k = 0; k < burst; k++) voice(getBuf('crk' + ((Math.random() * 12) | 0)), { out: em, gain: LV.crk * Math.pow(Math.random(), 1.4) * f, rate: mr(0.8, 1.25), when: now + (k ? mr(0.02, 0.3) : 0), low: true });
+  }
+  if (Math.random() < dt * 0.55 * fireS * (0.4 + FIRE.act)) {
+    voice(getBuf('pop' + ((Math.random() * 8) | 0)), { out: em, gain: LV.pop * (0.3 + 0.7 * Math.pow(Math.random(), 1.5)) * Math.min(1.2, fireS), rate: mr(0.85, 1.2), low: true });
+  }
+  if (GUST.t > FIRE.nextSettle) {
+    FIRE.nextSettle = GUST.t + mr(25, 70);
+    if (fireS > 0.25) voice(getBuf('settle' + ((Math.random() * 3) | 0)), { out: em, gain: LV.settle * f * mr(0.6, 1), rate: mr(0.9, 1.1), low: true });
   }
 }
 function drops(dt) {
   if (!dropPans) return;
-  const rate = L.rain * ((1 - L.H) * 5 + L.P * 4);
+  const rate = L.rain * ((1 - L.H) * 5 + L.P * 1.5);
   if (rate > 0.01 && Math.random() < rate * dt) {
     voice(getBuf('drop' + ((Math.random() * 8) | 0)), { out: dropPans[(Math.random() * 4) | 0], gain: LV.drop * Math.pow(Math.random(), 1.5) * (0.6 + 0.4 * L.rain), rate: mr(0.85, 1.2), low: true });
   }
@@ -9922,15 +10477,30 @@ function frame(dt) {
   L.leak = L.front * clamp(1 - Math.hypot(x - DOORWAY[0], (y - DOORWAY[1]) * 0.8, z - DOORWAY[2]) / 7, 0, 1);
   const rainT = clamp(C.env && isFinite(C.env.rain) ? C.env.rain : (rainEvt === null ? 0.7 : rainEvt), 0, 1.2);
   L.rain += (rainT - L.rain) * (1 - Math.exp(-dt * 1.5));
-  mixRain(); mixWind(dt); mixFire(dt); drops(dt);
+  updateWeather(dt);
+  mixRain(); mixWind(); mixFire(dt); drops(dt);
+  setG(layers.clock, present.clock ? LV.clock : 0, 0.5);
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i], e = ln.em; ln.fn(ln.pt);
+    if (Math.abs(ln.pt[0] - e.x) + Math.abs(ln.pt[1] - e.y) + Math.abs(ln.pt[2] - e.z) > 0.01) e.setPosition(ln.pt[0], ln.pt[1], ln.pt[2]);
+  }
   for (let i = 0; i < emitters.length; i++) {
     const e = emitters[i];
     if (e.follow) e.setPosition(L.x + L.fx * 0.3, L.y, L.z + L.fz * 0.3);
-    applyOcc(e.occ, e.occG, occAmount(e));
+    const d = Math.hypot(e.x - L.x, e.y - L.y, e.z - L.z);
+    applyOcc(e, occAmount(e), d);
+    setP(e.send.gain, revAmount(e, d), 0.15);
   }
-  const mOut = L.H * (1 - 0.7 * L.leak);
-  for (const oc of occChains) applyOcc(oc.f, oc.g, mOut, 0.15, oc.loss, oc.cutK);
-  setP(revRet.gain, 0.06 + 0.12 * L.H, 0.3);
+  const mOut = L.H * (1 - 0.7 * L.leak), mIn = (1 - L.H) * (1 - 0.7 * L.leak);
+  for (const oc of occChains) { const m = oc.inside ? mIn : mOut; setP(oc.f.frequency, 20000 * Math.pow(oc.cutK, m), 0.15); setP(oc.g.gain, 1 - oc.loss * m, 0.15); }
+  // room character: the tiled kitchen and the bare hall ring more than the book-lined study
+  const room = L.H > 0.5 && C.world && C.world.roomAt ? C.world.roomAt(x, y - 1.5, z) : null;
+  RV.roomWet += (((room && ROOM_WET[room]) || 1) - RV.roomWet) * (1 - Math.exp(-dt * 2));
+  setP(RV.retIn.gain, LV.revIn * RV.roomWet, 0.2);
+  setP(RV.lsIn.gain, L.H, 0.1); setP(RV.lsOut.gain, 1 - L.H, 0.1);
+  trackRocker();
+  if (GUST.t - present.t > 1.5) { present.t = GUST.t; checkPresence(); }
+  if (recent.size > 48) recent.clear();
   musicTick();
   const ms = performance.now() - t0;
   stats.updMs += ms; stats.updN++; if (ms > stats.updMax) stats.updMax = ms;
@@ -9956,14 +10526,19 @@ function meter(ms = 1000) {
 }
 function solo(list) {
   const set = list ? new Set([].concat(list)) : null;
-  for (const k of Object.keys(G)) { const v = !set || set.has(k) ? 1 : 0; G[k].gain.cancelScheduledValues(0); G[k].gain.value = v; G[k].gain._v = v; }
+  for (const k of Object.keys(G)) {
+    const v = !set || set.has(k) ? 1 : 0;
+    for (const nd of [G[k], GS.in[k], GS.out[k]]) if (nd) { nd.gain.cancelScheduledValues(0); nd.gain.value = v; nd.gain._v = v; }
+  }
 }
 function debugStats() {
   return { state: ctx ? ctx.state : 'none', sampleRate: ctx ? ctx.sampleRate : 0, renderSR: SR, baseLatency: ctx ? ctx.baseLatency : 0,
     voices: stats.voices, peakVoices: stats.peakVoices, created: stats.created, loops: stats.loops, emitters: emitters.length,
     musicActive: MUS.active.size, rt: stats.rt, liveLoops: liveLoops.size, buffers: Object.keys(BUF).length, renderMs: +stats.renderMs.toFixed(1),
     updAvgMs: stats.updN ? +(stats.updMs / stats.updN).toFixed(4) : 0, updMaxMs: +stats.updMax.toFixed(3), pending: fallbackQ.length + Object.keys(waiters).length, worker: !!worker, workerRenders: stats.workerRenders, mainRenders: stats.mainRenders,
-    listener: { H: +L.H.toFixed(2), U: +L.U.toFixed(2), P: +L.P.toFixed(2), leak: +L.leak.toFixed(2), rain: +L.rain.toFixed(2) } };
+    listener: { H: +L.H.toFixed(2), U: +L.U.toFixed(2), P: +L.P.toFixed(2), leak: +L.leak.toFixed(2), rain: +L.rain.toFixed(2) },
+    weather: { ground: +WET.ground.toFixed(2), shoe: +WET.shoe.toFixed(2), wind: +GUST.W.toFixed(2), gust: +GUST.g.toFixed(2) },
+    present: { fire: present.fire, clock: present.clock }, roomWet: +RV.roomWet.toFixed(2) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -9977,7 +10552,7 @@ C.register({
     Object.assign(A, {
       play, loop, setListener(cam) { listenerCam = cam || null; },
       setMuted, toggleMute, muted: !!C.state.muted,
-      _debug: { stats: debugStats, meter, solo, getBuf: n => !!getBuf(n), layers, LV, STEP_GAIN, SFX_GAIN, MUS,
+      _debug: { stats: debugStats, meter, solo, getBuf: n => !!getBuf(n), layers, LV, STEP_GAIN, SFX_GAIN, MUS, tapPoint: () => shaper,
         resetPeak() { stats.peakVoices = stats.voices; stats.updMax = 0; stats.updMs = 0; stats.updN = 0; },
         warm: () => new Promise(r => { const chk = () => (A._warm ? r(true) : setTimeout(chk, 50)); chk(); }) },
     });
@@ -9987,7 +10562,8 @@ C.register({
         MUS.pos = [x, y, z];
         if (MUS.em) { MUS.em.follow = false; MUS.em.setPosition(x, y, z); }
       } });
-    Object.assign(A.kettle, { start: kettleStart, stop: kettleStop, get on() { return KET.on; } });
+    Object.assign(A.kettle, { start: kettleStart, stop: kettleStop });
+    Object.defineProperty(A.kettle, 'on', { get: () => KET.on, configurable: true, enumerable: true });   // (Object.assign would copy a stale value)
     Object.assign(A.purr, { start: purrStart, stop: purrStop });
     C.on('start', onStart);
     C.on('resume', () => { resumeCtx(); if (ctx) { setP(duckG.gain, 1, 0.3); setP(duckLP.frequency, 20000, 0.3); } });
@@ -10002,7 +10578,7 @@ C.register({
     C.on('fire', p => { if (p && isFinite(p.level)) fireEvt = +p.level; });
     C.on('rain', p => { if (p && isFinite(p.level)) rainEvt = +p.level; });
     C.on('sit', onSit);
-    C.on('stand', () => { if (ctx) play('cushion', { volume: 0.6, rate: 1.1 }); });
+    C.on('stand', onStand);
     if (C.input && C.input.onKey) C.input.onKey('KeyM', toggleMute);
     // browsers may still create/leave the context suspended: resume on the next gesture; suspend while the tab is hidden
     const gesture = () => resumeCtx();
